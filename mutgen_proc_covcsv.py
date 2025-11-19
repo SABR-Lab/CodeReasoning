@@ -1571,7 +1571,8 @@ def process_bug_for_mutants(project_id, bug_id):
     print("\n7.  Creating comprehensive coverage CSV file...")
     comprehensive_csv_file = mutants_output_dir / f"{project_id}_{bug_id}_mutant_coverage.csv"
     create_comprehensive_coverage_csv(successful_mutants, comprehensive_csv_file, project_id, bug_id)
-    
+
+return true
 
 def main():
     """Main function"""
