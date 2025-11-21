@@ -1,0 +1,27 @@
+# Defects4J Mutant Generator Requirements
+# Core dependencies
+python>=3.8
+
+# No additional packages required - uses only Python standard library
+# The following are part of Python standard library:
+# - pathlib
+# - subprocess
+# - shutil
+# - multiprocessing
+# - concurrent.futures
+# - xml.etree.ElementTree
+# - csv
+# - json
+# - random
+# - argparse
+# - platform
+# - os
+# - sys
+# - datetime
+# - hashlib
+# - typing
+
+# External dependencies that must be installed separately:
+# 1. Defects4J - Follow installation instructions at:
+#    https://github.com/rjust/defects4j
+# 2. Java 8+ - Required for Defects4J
