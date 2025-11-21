@@ -121,13 +121,13 @@ class WorkerPool:
             print(f"   [Process {pid}] Error: {e}")
             return None
         
-        '''finally:
+        finally:
             # Cleanup to save disk space
             if mutant_dir.exists():
                 try:
                     shutil.rmtree(mutant_dir)
                 except:
-                    pass  # Ignore cleanup errors'''
+                    pass  # Ignore cleanup errors
     
     def process_mutants_parallel(self, work_dir: Path, mutants_output_dir: Path,
                                mutants: List[Dict], project_id: str, bug_id: str,
