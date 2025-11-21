@@ -37,7 +37,7 @@ class CSVGenerator:
             # Write data rows
             for mutant in successful_mutants:
                 row_data = {
-                    'Mutant': f"{project_id}_{bug_id}_mutant_{mutant['mutant_id']}",
+                    'Mutant': f"{project_id}_{bug_id}_{mutant['mutant_id']}",
                     'Line Coverage %': f"{mutant['coverage_percentage']:.2f}",
                     'Mutator': mutant['mutator'],
                     'Class Name': mutant['class_name'],
