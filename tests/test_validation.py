@@ -80,9 +80,9 @@ class TestValidation:
     
     def test_csv_generation_validation(self, temp_dir):
         """Validate CSV generation produces correct format"""
-        from utils.csv_generator import CSVGenerator
+        from utils.json_generator import JSONGenerator
         
-        csv_generator = CSVGenerator()
+        csv_generator = JSONGenerator()
         
         sample_mutants = [
             {

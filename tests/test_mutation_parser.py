@@ -56,7 +56,7 @@ class TestMutationParser:
         result = mutation_parser.parse_mutant_line(line)
         
         assert result is not None
-        assert result['mutated_code'] == 'pass'
+        assert result['mutated_code'] == '/*' + result['original_code'] + '*/'
     
     def test_find_mutants_log(self, temp_dir, mutation_parser):
         """Test finding mutants.log file"""

@@ -12,7 +12,8 @@ import random
 import platform
 from pathlib import Path
 #first run in terminal export PATH=$PATH:"/Users/quibliss/research/defects4j_codes/defects4j"/framework/bin
-
+BASE_CHECKOUT_DIR = Path.home() / "defects4j_mutants"
+BASE_CHECKOUT_DIR.mkdir(exist_ok=True)
 # Add the parent directory to Python path - PLATFORM INDEPENDENT
 current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
@@ -22,7 +23,7 @@ from core.project_manager import ProjectManager
 from core.mutation_parser import MutationParser
 from core.mutation_applier import MutationApplier
 from parallel.worker_pool import WorkerPool
-from utils.csv_generator import CSVGenerator
+from utils.json_generator import JSONGenerator
 from utils.file_ops import FileOperations
 
 
@@ -53,7 +54,7 @@ def check_environment():
 
 
 class MutantGenerator:
-    """Main orchestrator for mutant generation process - PLATFORM INDEPENDENT"""
+    """Main orchestrator for mutant generation process"""
     
     def __init__(self, max_workers: int = MAX_WORKERS, random_seed: int = 42):
         self.max_workers = max_workers
@@ -62,13 +63,12 @@ class MutantGenerator:
         self.mutation_parser = MutationParser()
         self.mutation_applier = MutationApplier(random_seed=random_seed)
         self.worker_pool = WorkerPool(max_workers=max_workers)
-        self.csv_generator = CSVGenerator()
+        self.json_generator = JSONGenerator()  # CHANGED: Use JSON generator
         self.file_ops = FileOperations()
         
         # Set global random seed for reproducibility
         random.seed(random_seed)
     
-    # ... (rest of the class methods remain the same, but now platform independent)
     def process_single_bug(self, project_id: str, bug_id: str, 
                           mutant_percentage: int, max_mutations: int) -> bool:
         """Process a single project bug and generate mutants"""
@@ -108,8 +108,8 @@ class MutantGenerator:
                 print("✗ No mutants created successfully")
                 return False
             
-            # Step 5: Generate results
-            self._generate_results(successful_mutants, mutants_output_dir, project_id, bug_id)
+            # Step 5: Generate JSON results (CHANGED: from CSV to JSON)
+            self._generate_json_results(successful_mutants, mutants_output_dir, project_id, bug_id)
             
             print(f"✓ Successfully processed {project_id}-{bug_id}: {len(successful_mutants)} mutants")
             return True
@@ -117,9 +117,9 @@ class MutantGenerator:
         except Exception as e:
             print(f"✗ Error processing {project_id}-{bug_id}: {e}")
             import traceback
-            traceback.print_exc()  # This will show exactly where the error occurs
-            return False    
-        
+            traceback.print_exc()
+            return False
+    
     def _setup_project(self, project_id: str, bug_id: str, work_dir: Path) -> bool:
         """Setup project: checkout, compile, run mutation testing"""
         # Clean existing directories
@@ -152,7 +152,7 @@ class MutantGenerator:
         print(f"Total mutations available: {len(all_mutations)}")
         print(f"Creating {num_mutants} mutants ({mutant_percentage}%)")
         
-        # Generate unique mutant combinations with reproducible randomness
+        # Generate unique mutant combinations
         selected_mutants = self.mutation_applier.generate_unique_mutants(
             all_mutations, num_mutants, max_mutations
         )
@@ -160,21 +160,20 @@ class MutantGenerator:
         print(f"Generated {len(selected_mutants)} unique mutant combinations")
         return selected_mutants
     
-    def _generate_results(self, successful_mutants: list, output_dir: Path, 
-                         project_id: str, bug_id: str) -> None:
-        """Generate CSV results and summary"""
+    def _generate_json_results(self, successful_mutants: list, output_dir: Path, 
+                             project_id: str, bug_id: str) -> None:
+        """Generate JSON results (CHANGED: from CSV to JSON)"""
         self.file_ops.ensure_directory(output_dir)
         
-        # Create comprehensive CSV
-        csv_file = output_dir / f"{project_id}_{bug_id}_mutant_coverage.csv"
-        self.csv_generator.create_comprehensive_coverage_csv(
-            successful_mutants, csv_file, project_id, bug_id
+        # Create comprehensive JSON
+        json_file = output_dir / f"{project_id}_{bug_id}_mutant_coverage.json"  # CHANGED: .json extension
+        self.json_generator.create_comprehensive_json(
+            successful_mutants, json_file, project_id, bug_id
         )
     
     def merge_project_results(self, project_name: str) -> None:
-        """Merge all CSV files for a project"""
-        self.csv_generator.merge_project_csv_files(project_name, BASE_CHECKOUT_DIR)
-
+        """Merge all JSON files for a project (CHANGED: from CSV to JSON)"""
+        self.json_generator.merge_project_json_files(project_name, BASE_CHECKOUT_DIR)
 
 def parse_project_argument(project_arg: str) -> list:
     """Parse project argument like 'Math-all', 'Math-1', 'Math-1,Math-2'"""
