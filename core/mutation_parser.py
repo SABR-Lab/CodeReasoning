@@ -64,8 +64,7 @@ class MutationParser:
                 'method_name': method_name,
                 'line_number': line_number,
                 'original_code': original_code,
-                'mutated_code': mutated_code,
-                'raw_line': line
+                'mutated_code': mutated_code
             }
             
         except Exception as e:

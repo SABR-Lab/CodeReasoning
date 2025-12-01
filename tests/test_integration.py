@@ -25,23 +25,23 @@ class TestIntegration:
         java_file = src_dir / "Calculator.java"
         java_content = """package org.example;
 
-public class Calculator {
-    public int add(int a, int b) {
-        return a + b;
-    }
-    
-    public boolean isPositive(int x) {
-        return x > 0;
-    }
-}
-"""
+                            public class Calculator {
+                                public int add(int a, int b) {
+                                    return a + b;
+                                }
+                                
+                                public boolean isPositive(int x) {
+                                    return x > 0;
+                                }
+                            }
+                        """
         java_file.write_text(java_content)
         
         # Create a mock mutants.log - FIXED FORMAT
         mutants_log = project_dir / "mutants.log"
         mutants_content = """# This is a comment line
-1:MATH:org.example.Calculator.add(II)I:org.example.Calculator.add(II)I:org.example.Calculator@add:3:return a + b |==> return a - b
-2:CONDITIONALS_BOUNDARY:org.example.Calculator.isPositive(I)Z:org.example.Calculator.isPositive(I)Z:org.example.Calculator@isPositive:7:return x > 0 |==> return x >= 0
+1:MATH:org.example.Calculator.add(II)I:org.example.Calculator.add(II)I:org.example.Calculator@add:3:45:return a + b |==> return a - b
+2:CONDITIONALS_BOUNDARY:org.example.Calculator.isPositive(I)Z:org.example.Calculator.isPositive(I)Z:org.example.Calculator@isPositive:7:342:return x > 0 |==> return x >= 0
 """
         mutants_log.write_text(mutants_content)
         
