@@ -65,10 +65,10 @@ def temp_dir():
 def sample_mutations_log_content():
     """Sample mutants.log content for testing - YOUR FORMAT"""
     return """# This is a comment
-1:VOID_METHOD_CALLS:org.example.Test.voidMethod()V:org.example.Test.voidMethod()V:org.example.Test@testMethod:10:someObject.voidMethod() |==> 
-2:CONDITIONALS_BOUNDARY:org.example.Test.test(I)Z:org.example.Test.test(I)Z:org.example.Test@test:15:x > 0 |==> x >= 0
-3:INCREMENTS:org.example.Test.increment()V:org.example.Test.increment()V:org.example.Test@increment:20:i++ |==> i--
-4:MATH:org.example.Test.calc()I:org.example.Test.calc()I:org.example.Test@calc:25:result * 2 |==> result * 3
+1:VOID_METHOD_CALLS:org.example.Test.voidMethod()V:org.example.Test.voidMethod()V:org.example.Test@testMethod:10:45:someObject.voidMethod() |==> 
+2:CONDITIONALS_BOUNDARY:org.example.Test.test(I)Z:org.example.Test.test(I)Z:org.example.Test@test:23:15:x > 0 |==> x >= 0
+3:INCREMENTS:org.example.Test.increment()V:org.example.Test.increment()V:org.example.Test@increment:20:343:i++ |==> i--
+4:MATH:org.example.Test.calc()I:org.example.Test.calc()I:org.example.Test@calc:25:23:result * 2 |==> result * 3
 """
 
 

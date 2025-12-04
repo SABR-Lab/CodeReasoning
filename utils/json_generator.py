@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import List, Dict, Set
 from datetime import datetime
 
-
 class JSONGenerator:
     """Generates JSON files with coverage and mutation data"""
     

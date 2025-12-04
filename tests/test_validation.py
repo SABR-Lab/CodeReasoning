@@ -27,11 +27,11 @@ class TestValidation:
         """Validate that mutant generation is reproducible with same seed"""
         sample_mutations = [
             {'mutant_id': '1', 'mutator': 'MUTATOR1', 'class_name': 'Test', 
-             'line_number': 10, 'original_code': 'code1', 'mutated_code': 'mut1'},
+             'line_number': 10, 'j':34,'original_code': 'code1', 'mutated_code': 'mut1'},
             {'mutant_id': '2', 'mutator': 'MUTATOR2', 'class_name': 'Test', 
-             'line_number': 15, 'original_code': 'code2', 'mutated_code': 'mut2'},
+             'line_number': 15, 'j':34,'original_code': 'code2', 'mutated_code': 'mut2'},
             {'mutant_id': '3', 'mutator': 'MUTATOR3', 'class_name': 'Test', 
-             'line_number': 20, 'original_code': 'code3', 'mutated_code': 'mut3'},
+             'line_number': 20, 'j':34,'original_code': 'code3', 'mutated_code': 'mut3'},
         ]
         
         # Generate mutants with same seed
@@ -79,47 +79,73 @@ class TestValidation:
         assert not test_dir.exists()
     
     def test_csv_generation_validation(self, temp_dir):
-        """Validate CSV generation produces correct format"""
+        """Validate JSON generation produces correct format"""
+        import json
         from utils.json_generator import JSONGenerator
         
-        csv_generator = JSONGenerator()
-        
+        # 1. Setup: Create the input data expected by create_comprehensive_json
+        # The generator expects a list of dictionaries, not a nested dict
         sample_mutants = [
             {
-                'mutant_id': '1',
-                'mutator': 'VOID_METHOD_CALLS',
-                'class_name': 'org.example.Test',
-                'line_number': 10,
-                'target_file': 'src/Test.java',
-                'total_tests_count': 100,
-                'failed_test_count': 5,
-                'failed_tests': ['test1', 'test2'],
-                'all_tests': ['test1', 'test2', 'test3'],
-                'coverage_success': True,
+                'mutant_id': 'mutant_1',
+                'mutator': 'MathMutator',
+                'class_name': 'org.example.Math',
+                'line_number': '42',
+                'target_file': 'src/main/java/Math.java',
+                'num_mutations': 1,
+                'mutation_signature': 'sig123',
                 'coverage_percentage': 85.5,
+                'total_tests_count': 50,
+                'failed_test_count': 1,
+                'coverage_success': True,
+                'failed_tests': ['test_fail_1'],
+                'all_tests': ['test_fail_1', 'test_pass_1'],
                 'method_coverage': {
-                    'org.example.Test.method1()V': ['10', '11'],
-                    'org.example.Test.method2(I)Z': ['15']
+                    'void test()': ['42', '43']
                 }
             }
         ]
         
-        csv_file = temp_dir / "test_output.csv"
-        csv_generator.create_comprehensive_coverage_csv(
-            sample_mutants, csv_file, "Math", "1"
+        # 2. Execution: Generate the file
+        generator = JSONGenerator()
+        output_file = temp_dir / "test_output.json"
+        
+        generator.create_comprehensive_json(
+            sample_mutants, output_file, "Math", "1"
         )
         
-        assert csv_file.exists()
+        # 3. Verification: Read the generated file and check structure
+        assert output_file.exists()
         
-        # Verify CSV has expected columns
-        import csv
-        with open(csv_file, 'r') as f:
-            reader = csv.DictReader(f)
-            fieldnames = reader.fieldnames
+        with open(output_file, 'r') as f:
+            generated_data = json.load(f)
             
-            assert 'Mutant' in fieldnames
-            assert 'Line Coverage %' in fieldnames
-            assert 'Mutator' in fieldnames
-            assert 'Class Name' in fieldnames
-            assert 'Total Tests Count' in fieldnames
-            assert 'org.example.Test.method1()V' in fieldnames
+        # Check Root Metadata
+        assert "metadata" in generated_data
+        assert generated_data["metadata"]["project"] == "Math"
+        assert generated_data["metadata"]["bug_id"] == "1"
+        assert generated_data["metadata"]["total_mutants"] == 1
+        
+        # Check Mutants List
+        assert "mutants" in generated_data
+        assert isinstance(generated_data["mutants"], list)
+        assert len(generated_data["mutants"]) == 1
+        
+        # Check Specific Mutant Fields
+        mutant = generated_data["mutants"][0]
+        assert mutant["mutant_id"] == "mutant_1"
+        
+        # Check Nested Structures (Coverage)
+        assert "coverage" in mutant
+        assert mutant["coverage"]["line_coverage_percentage"] == 85.5
+        assert mutant["coverage"]["coverage_success"] is True
+        
+        # Check Nested Structures (Tests)
+        assert "tests" in mutant
+        assert "failed_tests" in mutant["tests"]
+        assert "all_tests" in mutant["tests"]
+        assert mutant["tests"]["failed_tests"] == ['test_fail_1']
+        
+        # Check Nested Structures (Method Coverage)
+        assert "method_coverage" in mutant
+        assert mutant["method_coverage"] == {'void test()': ['42', '43']}

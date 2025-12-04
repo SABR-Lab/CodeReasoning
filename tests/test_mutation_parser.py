@@ -93,10 +93,10 @@ class TestMutationParser:
         """Test that duplicate mutations are filtered out - YOUR LOGIC"""
         # Create test data that matches YOUR duplicate filtering logic
         # YOUR code filters when line_number AND mutator are the same
-        log_content = """1:VOID_METHOD_CALLS:org.example.Test@method:10:code |==> 
+        log_content = """1:VOID_METHOD_CALLS:org.example.Test@method:10:675:code |==> 
 1:VOID_METHOD_CALLS:org.example.Test@method:10:675:code |==> 
 2:CONDITIONALS_BOUNDARY:org.example.Test@method:15:54:x > 0 |==> x >= 0
-2:CONDITIONALS_BOUNDARY:org.example.Test@method:15:234:x > 0 |==> x >= 0
+2:CONDITIONALS_BOUNDARY:org.example.Test@method:15:54:x > 0 |==> x >= 0
 3:INCREMENTS:org.example.Test@method:20:498:i++ |==> i--
 """
         log_file = temp_dir / "mutants.log"
