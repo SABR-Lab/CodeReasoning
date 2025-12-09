@@ -74,10 +74,10 @@ def main():
     
     if passed == total:
         print(f"✅ All {passed}/{total} tests passed!")
-        return 0
+        return False
     else:
         print(f"❌ {total - passed}/{total} tests failed")
-        return 1
+        return True
 
 if __name__ == "__main__":
     sys.exit(main())

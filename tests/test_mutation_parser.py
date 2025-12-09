@@ -12,7 +12,7 @@ class TestMutationParser:
     def test_parse_mutant_line_valid(self, mutation_parser):
         """Test parsing a valid mutant line - YOUR FORMAT"""
         # Using YOUR actual format from the original code
-        line = "1:VOID_METHOD_CALLS:org.example.Test.voidMethod()V:org.example.Test.voidMethod()V:org.example.Test@testMethod:10:4555:someObject.voidMethod() |==> "
+        line = "1:VOID_METHOD_CALLS:org.example.Test.voidMethod()V:org.example.Test.voidMethod()V:org.example.Test@testMethod:10:4555:someObject.voidMethod() |==> p"
         
         # Call YOUR actual parsing function
         result = mutation_parser.parse_mutant_line(line)
@@ -23,7 +23,7 @@ class TestMutationParser:
         assert result['class_name'] == 'org.example.Test'
         assert result['line_number'] == 10
         assert result['original_code'] == 'someObject.voidMethod()'
-        assert result['mutated_code'] == ''
+        assert result['mutated_code'] == 'p'
     
     def test_parse_mutant_line_with_mutation(self, mutation_parser):
         """Test parsing a line with actual mutation - YOUR FORMAT"""
@@ -93,11 +93,12 @@ class TestMutationParser:
         """Test that duplicate mutations are filtered out - YOUR LOGIC"""
         # Create test data that matches YOUR duplicate filtering logic
         # YOUR code filters when line_number AND mutator are the same
-        log_content = """1:VOID_METHOD_CALLS:org.example.Test@method:10:675:code |==> 
-1:VOID_METHOD_CALLS:org.example.Test@method:10:675:code |==> 
-2:CONDITIONALS_BOUNDARY:org.example.Test@method:15:54:x > 0 |==> x >= 0
-2:CONDITIONALS_BOUNDARY:org.example.Test@method:15:54:x > 0 |==> x >= 0
-3:INCREMENTS:org.example.Test@method:20:498:i++ |==> i--
+        log_content = """1:LVR:FALSE:TRUE:org.apache.commons.math3.distribution.HypergeometricDistribution:47:2230:false |==> true
+1:LVR:FALSE:TRUE:org.apache.commons.math3.distribution.HypergeometricDistribution:47:2230:false |==> true
+30:LVR:0:POS:org.apache.commons.math3.distribution.HypergeometricDistribution@cumulativeProbability(int):119:5471:0.0 |==> 1.0
+30:LVR:0:POS:org.apache.commons.math3.distribution.HypergeometricDistribution@cumulativeProbability(int):119:5471:0.0 |==> 1.0
+31:LVR:0:NEG:org.apache.commons.math3.distribution.HypergeometricDistribution@cumulativeProbability(int):119:5471:0.0 |==> -1.0
+
 """
         log_file = temp_dir / "mutants.log"
         log_file.write_text(log_content)

@@ -172,10 +172,12 @@ class MutationApplier:
             attempts += 1
             
             # Randomly decide how many mutations for this mutant (1 to max_mutations)
-            num_mutations_for_mutant = random.randint(1, max_mutations)
-            
-            # Randomly select mutations
-            selected_mutations = random.sample(all_mutations, min(num_mutations_for_mutant, len(all_mutations)))
+            # Use the instance-local RNG so two appliers with the same seed produce
+            # identical results and are not affected by global RNG state.
+            num_mutations_for_mutant = self.rng.randint(1, max_mutations)
+
+            # Randomly select mutations using the instance RNG
+            selected_mutations = self.rng.sample(all_mutations, min(num_mutations_for_mutant, len(all_mutations)))
             
             # Create a unique signature for this combination
             mutation_signature = self._create_mutation_signature(selected_mutations)
@@ -225,4 +227,5 @@ class MutationApplier:
         signature = "|".join(signature_parts)
         
         # Use hash to make it shorter (optional)
-        return hashlib.md5(signature.encode()).hexdigest()
+        return signature
+    #hashlib.md5(signature.encode()).hexdigest()

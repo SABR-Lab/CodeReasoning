@@ -86,6 +86,8 @@ class MutationParser:
                         # Skip duplicates (same line, same mutator)
                         if (mutation_info['line_number'] == prev_line and 
                             mutation_info['mutator'] == prev_mutator):
+                            prev_line = mutation_info['line_number']
+                            prev_mutator = mutation_info['mutator']
                             continue
                         
                         prev_line = mutation_info['line_number']
