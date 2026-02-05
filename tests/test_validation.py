@@ -95,6 +95,7 @@ class TestValidation:
                 'num_mutations': 1,
                 'mutation_signature': 'sig123',
                 'coverage_percentage': 85.5,
+                'branch_coverage': 70.0,
                 'total_tests_count': 50,
                 'failed_test_count': 1,
                 'coverage_success': True,

@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-Defects4J Parallel Mutant Generator - PLATFORM INDEPENDENT
-
-Cross-platform version that works on Windows, macOS, and Linux.
+Defects4J Parallel Mutant Generator - JSON OUTPUT
+ISOLATED & REPRODUCIBLE across all platforms
 """
 
 import argparse
@@ -11,14 +10,16 @@ import os
 import random
 import platform
 from pathlib import Path
-#first run in terminal export PATH=$PATH:"/Users/quibliss/research/defects4j_codes/defects4j"/framework/bin
-BASE_CHECKOUT_DIR = Path.home() / "defects4j_mutants"
+
+# OVERRIDE: Force use of home directory to avoid macOS permissions
+BASE_CHECKOUT_DIR = Path.home() / "defects4j_mutants_testingnewcode"
 BASE_CHECKOUT_DIR.mkdir(exist_ok=True)
-# Add the parent directory to Python path - PLATFORM INDEPENDENT
+
+# Add the parent directory to Python path
 current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
 
-from config.settings import BUGS_TO_PROCESS, BASE_CHECKOUT_DIR, MAX_WORKERS, DEFAULT_MUTANT_PERCENTAGE, DEFAULT_MAX_MUTATIONS
+from config.settings import BUGS_TO_PROCESS, MAX_WORKERS, DEFAULT_MUTANT_PERCENTAGE, DEFAULT_MAX_MUTATIONS
 from core.project_manager import ProjectManager
 from core.mutation_parser import MutationParser
 from core.mutation_applier import MutationApplier
@@ -27,66 +28,49 @@ from utils.json_generator import JSONGenerator
 from utils.file_ops import FileOperations
 
 
-def check_environment():
-    """Check if the environment is suitable for execution"""
-    system = platform.system().lower()
-    print(f"Platform: {platform.platform()}")
-    print(f"Python: {sys.version}")
-    
-    # Check if Defects4J is likely available
-    try:
-        import subprocess
-        if system == "windows":
-            result = subprocess.run(["defects4j.bat", "env"], capture_output=True, text=True)
-        else:
-            result = subprocess.run(["defects4j", "env"], capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            print("✓ Defects4J is available")
-        else:
-            print("✗ Defects4J may not be properly installed")
-            print("Please ensure Defects4J is in your PATH")
-    except:
-        print("✗ Defects4J command not found")
-        print("Please install Defects4J and ensure it's in your PATH")
-    
-    return True
-
-
 class MutantGenerator:
-    """Main orchestrator for mutant generation process"""
+    """Main orchestrator - REPRODUCIBLE & ISOLATED"""
     
     def __init__(self, max_workers: int = MAX_WORKERS, random_seed: int = 42):
         self.max_workers = max_workers
         self.random_seed = random_seed
+        
+        # CRITICAL FIX: Only set hash seed for Python, not for subprocesses
+        # We'll handle this differently - NOT setting it globally
+        
+        # Initialize components
         self.project_manager = ProjectManager()
         self.mutation_parser = MutationParser()
-        self.mutation_applier = MutationApplier(random_seed=random_seed)
-        self.worker_pool = WorkerPool(max_workers=max_workers)
-        self.json_generator = JSONGenerator()  # CHANGED: Use JSON generator
+        self.json_generator = JSONGenerator()
         self.file_ops = FileOperations()
         
-        # Set global random seed for reproducibility
+        # Initialize random - but don't affect subprocesses
         random.seed(random_seed)
     
-    def process_single_bug(self, project_id: str, bug_id: str, 
+    def process_single_bug(self, project_id: str, bug_id: str,
                           mutant_percentage: int, max_mutations: int) -> bool:
-        """Process a single project bug and generate mutants"""
+        """Process bug with ISOLATION and REPRODUCIBILITY"""
+        
+        # CLEANUP any previous runs for THIS bug only
+        self._cleanup_bug_directories(project_id, bug_id)
+        
+        # Create ISOLATED directories
         work_dir = BASE_CHECKOUT_DIR / f"{project_id}_{bug_id}f"
         mutants_output_dir = BASE_CHECKOUT_DIR / f"{project_id}_{bug_id}_mutants"
         
-        print(f"\nProcessing: {project_id}-{bug_id}")
-        print(f"Mutant Percentage: {mutant_percentage}%")
-        print(f"Max Mutations: {max_mutations}")
-        print(f"Random Seed: {self.random_seed}")
-        print("=" * 50)
+        print(f"\n{'='*60}")
+        print(f"ISOLATED PROCESS: {project_id}-{bug_id}")
+        print(f"Seed: {self.random_seed}")
+        print(f"Directory: {work_dir}")
+        print(f"Output: {mutants_output_dir}")
+        print(f"{'='*60}")
         
         try:
-            # Step 1: Setup project
+            # Setup project
             if not self._setup_project(project_id, bug_id, work_dir):
                 return False
             
-            # Step 2: Get source directories
+            # Get source directories
             source_dirs = self.project_manager.get_source_directories(work_dir)
             if not source_dirs:
                 print("✗ No source directories found")
@@ -94,31 +78,74 @@ class MutantGenerator:
             
             relative_source_dirs = self.file_ops.get_relative_paths(source_dirs, work_dir)
             
-            # Step 3: Parse mutations and select based on percentage and max mutations
-            mutations = self._select_mutations(work_dir, mutant_percentage, max_mutations)
+            # Get mutations with PROJECT-SPECIFIC seed
+            mutation_applier = MutationApplier(
+                random_seed=self.random_seed,
+                project_id=project_id,
+                bug_id=bug_id
+            )
+            
+            mutations = self._select_mutations(work_dir, mutation_applier, 
+                                             mutant_percentage, max_mutations)
             if not mutations:
                 return False
             
-            # Step 4: Process mutants in parallel
-            successful_mutants, failed_mutations = self.worker_pool.process_mutants_parallel(
-                work_dir, mutants_output_dir, mutations, project_id, bug_id, relative_source_dirs
+            # Process with isolation
+            worker_pool = WorkerPool(max_workers=self.max_workers)
+            successful_mutants, failed_mutants = worker_pool.process_mutants_parallel(
+                work_dir, mutants_output_dir, mutations, 
+                project_id, bug_id, relative_source_dirs
             )
             
-            if not successful_mutants:
-                print("✗ No mutants created successfully")
-                return False
+            if successful_mutants:
+                # VERIFY all mutants belong to this bug
+                verified_mutants = [
+                    m for m in successful_mutants 
+                    if m.get('project_id') == project_id and m.get('bug_id') == bug_id
+                ]
+                
+                if len(verified_mutants) != len(successful_mutants):
+                    print(f"WARNING: {len(successful_mutants) - len(verified_mutants)} "
+                          f"mutants had incorrect project/bug tags!")
+                
+                self._generate_json_results(verified_mutants, mutants_output_dir, 
+                                          project_id, bug_id)
+                
+                print(f"✓ Successfully processed {project_id}-{bug_id}: {len(verified_mutants)} mutants")
+                return True
             
-            # Step 5: Generate JSON results (CHANGED: from CSV to JSON)
-            self._generate_json_results(successful_mutants, mutants_output_dir, project_id, bug_id)
-            
-            print(f"✓ Successfully processed {project_id}-{bug_id}: {len(successful_mutants)} mutants")
-            return True
+            print("✗ No mutants created successfully")
+            return False
             
         except Exception as e:
-            print(f"✗ Error processing {project_id}-{bug_id}: {e}")
+            print(f"ERROR in {project_id}-{bug_id}: {e}")
             import traceback
             traceback.print_exc()
+            # Emergency cleanup for this bug only
+            self._cleanup_bug_directories(project_id, bug_id)
             return False
+    
+    # ... rest of the class methods remain the same ...
+    
+    def _cleanup_bug_directories(self, project_id: str, bug_id: str):
+        """Clean up ONLY directories for this specific bug"""
+        import shutil
+        
+        patterns = [
+            f"{project_id}_{bug_id}f",
+            f"{project_id}_{bug_id}_mutants",
+            f"temp_mutant_{project_id}_{bug_id}_*"
+        ]
+        
+        for pattern in patterns:
+            for item in BASE_CHECKOUT_DIR.glob(pattern):
+                try:
+                    if item.is_dir():
+                        shutil.rmtree(item, ignore_errors=True)
+                    else:
+                        item.unlink(missing_ok=True)
+                except:
+                    pass
     
     def _setup_project(self, project_id: str, bug_id: str, work_dir: Path) -> bool:
         """Setup project: checkout, compile, run mutation testing"""
@@ -135,8 +162,9 @@ class MutantGenerator:
         
         return True
     
-    def _select_mutations(self, work_dir: Path, mutant_percentage: int, max_mutations: int) -> list:
-        """Parse mutations and select based on percentage and max mutations constraint"""
+    def _select_mutations(self, work_dir: Path, mutation_applier: MutationApplier,
+                         mutant_percentage: int, max_mutations: int) -> list:
+        """Select mutations with project-specific isolation"""
         log_file = self.mutation_parser.find_mutants_log(work_dir)
         if not log_file:
             print("✗ No mutants.log found")
@@ -152,8 +180,8 @@ class MutantGenerator:
         print(f"Total mutations available: {len(all_mutations)}")
         print(f"Creating {num_mutants} mutants ({mutant_percentage}%)")
         
-        # Generate unique mutant combinations
-        selected_mutants = self.mutation_applier.generate_unique_mutants(
+        # Use the project-specific applier
+        selected_mutants = mutation_applier.generate_unique_mutants(
             all_mutations, num_mutants, max_mutations
         )
         
@@ -162,18 +190,19 @@ class MutantGenerator:
     
     def _generate_json_results(self, successful_mutants: list, output_dir: Path, 
                              project_id: str, bug_id: str) -> None:
-        """Generate JSON results (CHANGED: from CSV to JSON)"""
+        """Generate JSON results"""
         self.file_ops.ensure_directory(output_dir)
         
         # Create comprehensive JSON
-        json_file = output_dir / f"{project_id}_{bug_id}_mutant_coverage.json"  # CHANGED: .json extension
+        json_file = output_dir / f"{project_id}_{bug_id}_mutant_coverage.json"
         self.json_generator.create_comprehensive_json(
             successful_mutants, json_file, project_id, bug_id
         )
     
     def merge_project_results(self, project_name: str) -> None:
-        """Merge all JSON files for a project (CHANGED: from CSV to JSON)"""
+        """Merge all JSON files for a project"""
         self.json_generator.merge_project_json_files(project_name, BASE_CHECKOUT_DIR)
+
 
 def parse_project_argument(project_arg: str) -> list:
     """Parse project argument like 'Math-all', 'Math-1', 'Math-1,Math-2'"""
@@ -212,22 +241,42 @@ def validate_arguments(percentage: int, max_mutations: int) -> bool:
     
     return True
 
+
+def check_environment():
+    """Environment check"""
+    system = platform.system().lower()
+    print(f"Platform: {platform.platform()}")
+    print(f"Python: {sys.version}")
+    
+    # Check Defects4J
+    try:
+        import subprocess
+        if system == "windows":
+            result = subprocess.run(["defects4j.bat", "version"], capture_output=True, text=True)
+        else:
+            result = subprocess.run(["defects4j", "version"], capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            print("✅ Defects4J is available")
+        else:
+            print("⚠️ Defects4J found but returned error")
+    except:
+        print("⚠️ Defects4J command not found or error")
+    
+    return True
+
+
 def main():
-    """Main entry point - PLATFORM INDEPENDENT"""
+    """Main entry point"""
     # Environment check
     if not check_environment():
         print("Environment check failed. Please fix issues before proceeding.")
         sys.exit(1)
     
     parser = argparse.ArgumentParser(
-        description="Defects4J Parallel Mutant Generator - PLATFORM INDEPENDENT",
+        description="Defects4J Parallel Mutant Generator - ISOLATED & REPRODUCIBLE",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    
-    # ... (argument parsing remains the same)
-    print("Projects: \"Math(1-106)", "Lang(1-65)", "Time(1-27)", "Chart(1-26)", "Closure(1-194)", "Codec(1-18)", 
-           "Compress(1-47)", "Csv(1-16)", "JacksonCore(1-26)", "JacksonDatabind(1-113)", 
-           "JacksonXml(1-6)", "Jsoup(1-93)", "JxPath(1-22)\"")
     
     parser.add_argument(
         "--project", 
@@ -238,7 +287,7 @@ def main():
     
     parser.add_argument(
         "--percentage", 
-        type=int,
+        type=float,
         default=DEFAULT_MUTANT_PERCENTAGE,
         help=f"Percentage of mutants to create (0-100, default: {DEFAULT_MUTANT_PERCENTAGE})"
     )
@@ -277,8 +326,8 @@ def main():
         print("Error: No valid projects found to process")
         print("Available formats: 'Math-all', 'Math-1', 'Math-1,Math-2'")
         sys.exit(1)
-
-    print("Defects4J Parallel Mutant Generator - PLATFORM INDEPENDENT")
+    
+    print("Defects4J Parallel Mutant Generator - ISOLATED & REPRODUCIBLE")
     print("=" * 60)
     print(f"Platform: {platform.platform()}")
     print(f"Projects: {len(projects_to_process)}")
@@ -287,9 +336,10 @@ def main():
     print(f"Random Seed: {args.seed}")
     print(f"Workers: {args.workers}")
     print(f"Output: {BASE_CHECKOUT_DIR}")
+    print(f"Output Format: JSON")
+    print(f"Features: Isolation ✓ | Cross-platform reproducibility ✓")
     print("=" * 60)
     
-    # Rest of main function remains the same...
     # Set global random seed immediately
     random.seed(args.seed)
     
@@ -303,7 +353,7 @@ def main():
     for project_id, bug_id in projects_to_process:
         # Merge previous project results when switching projects
         if previous_project and previous_project != project_id:
-            print(f"\nMerging results for {previous_project}...")
+            print(f"\nMerging JSON results for {previous_project}...")
             generator.merge_project_results(previous_project)
         
         success = generator.process_single_bug(project_id, bug_id, args.percentage, args.max_mutations)
@@ -314,13 +364,15 @@ def main():
     
     # Merge results for the last project
     if previous_project:
-        print(f"\nMerging results for {previous_project}...")
+        print(f"\nMerging JSON results for {previous_project}...")
         generator.merge_project_results(previous_project)
     
     print(f"\n{'='*60}")
     print(f"COMPLETED: {success_count}/{len(projects_to_process)} projects processed successfully")
     print(f"Random Seed Used: {args.seed}")
     print(f"Results saved in: {BASE_CHECKOUT_DIR}")
+    print(f"Output Format: JSON")
+
 
 if __name__ == "__main__":
     main()

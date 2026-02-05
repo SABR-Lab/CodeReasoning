@@ -46,6 +46,7 @@ class MutationParser:
             # Extract class and method names
             if '@' in class_method:
                 class_name, method_name = class_method.split('@')
+                class_name = class_name.split('$')[0]  # Remove inner class part  
             else:
                 class_name, method_name = class_method, ""
             

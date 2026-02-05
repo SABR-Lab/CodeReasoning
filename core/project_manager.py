@@ -1,9 +1,9 @@
-"""Manages Defects4J project operations - PLATFORM INDEPENDENT"""
+"""Manages Defects4J project operations - FIXED for subprocess compatibility"""
 
+import platform
 import shutil
 import subprocess
 import os
-import platform
 from pathlib import Path
 from typing import List
 
@@ -11,7 +11,7 @@ from config.settings import DEFECTS4J_EXECUTABLE, BASE_CHECKOUT_DIR
 
 
 class ProjectManager:
-    """Handles project checkout, compilation, and setup - PLATFORM INDEPENDENT"""
+    """Handles project checkout, compilation, and setup"""
     
     def __init__(self, base_dir: Path = BASE_CHECKOUT_DIR):
         self.base_dir = base_dir
@@ -28,6 +28,11 @@ class ProjectManager:
     def _run_platform_command(self, command: List[str], work_dir: Path, 
                             timeout: int = 300) -> bool:
         """Run command with platform-specific considerations"""
+        env = os.environ.copy()
+        python_env_vars = ['PYTHONHASHSEED', 'PYTHONPATH', 'PYTHONHOME']
+        for var in python_env_vars:
+            if var in env:
+                del env[var]
         try:
             # Handle command formatting for different platforms
             if self.system == "windows":
@@ -138,7 +143,7 @@ class ProjectManager:
         except Exception as e:
             print(f"✗ Mutation testing failed: {e}")
             return False
-    
+
     def get_source_directories(self, work_dir: Path) -> List[Path]:
         """Find all source directories in the project"""
         source_dirs = []
