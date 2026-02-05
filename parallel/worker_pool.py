@@ -1,177 +1,242 @@
-"""Manages parallel execution of mutant tasks"""
-import shutil
+"""Manages parallel execution - REPRODUCIBLE & ISOLATED"""
+
 import os
-import subprocess
+import random
+import shutil
 import time
+import uuid
+import hashlib
+import signal
+import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
-
-from config.settings import MAX_WORKERS
 from core.mutation_applier import MutationApplier
-from core.coverage_runner import CoverageRunner
-
 
 class WorkerPool:
-    """Manages parallel execution of mutant creation and analysis"""
+    """Manages parallel execution - REPRODUCIBLE & ISOLATED"""
     
-    def __init__(self, max_workers: int = MAX_WORKERS):
+    def __init__(self, max_workers: int = 6):
         self.max_workers = max_workers
-        self.mutation_applier = MutationApplier()
-        self.coverage_runner = CoverageRunner()
     
     def process_single_mutant(self, args: Tuple) -> Dict[str, Any]:
-        """
-        Process a single mutant - applies mutation and runs coverage
-        This function runs in parallel processes
-        """
-        work_dir, mutant_dir, mutant_info, project_id, bug_id, relative_source_dirs = args
+        """Process single mutant - ISOLATED and REPRODUCIBLE"""
+        (work_dir, mutant_dir, mutant_info, project_id, bug_id, 
+         relative_source_dirs, worker_seed) = args
         
-        mutant_id = mutant_info['mutant_id']
+        # CRITICAL: Set seeds for reproducibility
+        import random
+        random.seed(worker_seed)
+        
+        # Create FRESH instances with isolated seeds
+        mutation_applier = MutationApplier(
+            random_seed=worker_seed,
+            project_id=project_id,
+            bug_id=bug_id
+        )
+        
+        from core.coverage_runner import CoverageRunner
+        coverage_runner = CoverageRunner()
+        
         pid = os.getpid()
+        mutant_id = mutant_info['mutant_id']
         
         try:
-            print(f"   [Process {pid}] Starting Mutant {mutant_id} with {mutant_info['num_mutations']} mutations...")
+            print(f"   [PID {pid}] Processing {project_id}-{bug_id} mutant {mutant_id}")
             
-            # 1. Create project copy
-            if not self.mutation_applier.create_project_copy(work_dir, mutant_dir):
+            # VALIDATE: Check mutant belongs to correct project/bug
+            if (mutant_info.get('project_id') != project_id or 
+                mutant_info.get('bug_id') != bug_id):
+                print(f"   [PID {pid}] ERROR: Mutant data mismatch!")
                 return None
             
-            # 2. Reconstruct source directories
-            source_dirs = [mutant_dir / rel_path for rel_path in relative_source_dirs]
+            # 1. Create ISOLATED project copy
+            if not mutation_applier.create_project_copy(work_dir, mutant_dir):
+                return None
             
-            # 3. Group mutations by file
+            # 2. Process mutations
+            source_dirs = [mutant_dir / rel_path for rel_path in relative_source_dirs]
             mutations_by_file = {}
+            
+            print(f"   [PID {pid}] Mutant {mutant_id} will apply the following mutations:")
             for mutation in mutant_info['mutations']:
                 class_name = mutation['class_name']
-                target_file = self.mutation_applier.find_java_file_by_class(class_name, source_dirs)
-                if target_file:
-                    if target_file not in mutations_by_file:
-                        mutations_by_file[target_file] = []
-                    mutations_by_file[target_file].append(mutation)
+                line_number = mutation['line_number']
+                mutator = mutation['mutator']
+                original_code = mutation.get('original_code', '').strip()
+                mutated_code = mutation.get('mutated_code', '').strip()
+                print(f"      - File/Class: {class_name}, Line: {line_number}, Mutator: {mutator}")
+                print(f"        Original: {original_code}")
+                print(f"        Mutated : {mutated_code}")
+                target_file = mutation_applier.find_java_file_by_class(class_name, source_dirs)
+                if not target_file:
+                    print(f"   [PID {pid}] File not found: {class_name}")
+                    continue
+                if target_file not in mutations_by_file:
+                    mutations_by_file[target_file] = []
+                mutations_by_file[target_file].append(mutation)
             
-            # 4. Apply mutations to each file
-            all_success = True
+            # 3. Apply mutations
             for target_file, file_mutations in mutations_by_file.items():
                 if len(file_mutations) == 1:
-                    # Single mutation
-                    mutation = file_mutations[0]
-                    success = self.mutation_applier.apply_mutation_to_file(
-                        target_file,
-                        mutation['line_number'],
-                        mutation['original_code'],
-                        mutation['mutated_code']
+                    m = file_mutations[0]
+                    success = mutation_applier.apply_mutation_to_file(
+                        target_file, m['line_number'], m['original_code'], m['mutated_code']
                     )
                 else:
-                    # Multiple mutations to the same file
-                    success = self.mutation_applier.apply_multiple_mutations(target_file, file_mutations)
+                    success = mutation_applier.apply_multiple_mutations(target_file, file_mutations)
                 
                 if not success:
-                    all_success = False
-                    print(f"   [Process {pid}] Failed to apply mutations to {target_file}")
-                    break
+                    return None
             
-            if not all_success:
-                return None
+            # 4. Run coverage
+            coverage_result = coverage_runner.run_coverage_analysis(
+                mutant_dir, project_id, bug_id
+            )
             
-            # 5. Run coverage analysis
-            coverage_result = self.coverage_runner.run_coverage_analysis(mutant_dir, project_id, bug_id)
-            
-            # 6. Prepare result
-            # Collect all file paths, classes, and line numbers
-            all_target_files = [str(f.relative_to(mutant_dir)) for f in mutations_by_file.keys()]
-            # Fix this section - check if class_name is already a string or needs processing
-            if isinstance(mutant_info['class_name'], str) and ', ' in mutant_info['class_name']:
-                all_classes = mutant_info['class_name'].split(', ')
-            else:
-                all_classes = [str(mutant_info['class_name'])]  # Ensure it's a list
-
-            # Same fix for line numbers
-            if isinstance(mutant_info['line_number'], str) and ', ' in mutant_info['line_number']:
-                all_line_numbers = mutant_info['line_number'].split(', ')
-            else:
-                all_line_numbers = [str(mutant_info['line_number'])]  # Ensure it's a list
+            # 5. Prepare ISOLATED result
             result_info = {
                 'mutant_id': mutant_info['mutant_id'],
+                'project_id': project_id,
+                'bug_id': bug_id,
                 'mutant_directory': str(mutant_dir),
-                'mutator': mutant_info['mutator'],
-                'class_name': ', '.join(all_classes),              # ← All classes
-                'line_number': ', '.join(all_line_numbers),        # ← All line numbers
-                'target_file': '; '.join(all_target_files),        # ← All target files
+                'mutator': ', '.join(mutant_info['mutators']),
+                'class_name': mutant_info['class_name'],
+                'line_number': mutant_info['line_number'],
+                'target_file': str(list(mutations_by_file.keys())[0].relative_to(mutant_dir)),
                 'total_tests_count': coverage_result['total_tests'],
                 'failed_test_count': coverage_result['failed_count'],
                 'failed_tests': coverage_result['failed_tests'],
                 'all_tests': coverage_result['all_tests'],
                 'coverage_success': coverage_result['coverage_success'],
                 'coverage_percentage': coverage_result['coverage_percentage'],
+                'branch_coverage': coverage_result['branch_coverage'],
                 'method_coverage': coverage_result['method_coverage'],
                 'num_mutations': mutant_info['num_mutations'],
-                'mutation_signature': mutant_info['signature']
+                'mutation_signature': mutant_info['signature'],
+                'generation_seed': mutant_info.get('generation_seed', worker_seed),
+                'worker_pid': pid,
+                'worker_seed': worker_seed
             }
-
-            # Save coverage output
-            coverage_output_file = mutant_dir / "coverage_output.log"
-            with open(coverage_output_file, 'w') as f:
-                f.write(coverage_result['coverage_output'])
             
-            print(f"   [Process {pid}] Finished Mutant {mutant_id} (Cov: {coverage_result['coverage_percentage']:.2f}%, Mutations: {mutant_info['num_mutations']})")
             return result_info
-
+            
         except Exception as e:
-            print(f"   [Process {pid}] Error: {e}")
+            print(f"   [PID {pid}] Error: {e}")
+            import traceback
+            traceback.print_exc()
             return None
         
         finally:
-            # Cleanup to save disk space
-            if mutant_dir.exists():
+            # Cleanup - but only if it's a temp directory
+            if "temp_mutant_" in str(mutant_dir):
+                # Kill any lingering processes that reference this mutant directory
+                try:
+                    self._kill_processes_for_path(mutant_dir)
+                except Exception:
+                    pass
                 try:
                     shutil.rmtree(mutant_dir)
-                except:
-                    pass  # Ignore cleanup errors
+                except Exception:
+                    pass
+
+    def _kill_processes_for_path(self, path: Path, timeout: int = 5):
+        """Kill processes whose command line references the given path.
+
+        This helps clean up java/ant child processes that can remain after
+        timeouts or errors. We try SIGTERM first, then SIGKILL.
+        """
+        # Use pgrep -f to find processes matching the path string (works on macOS/Linux)
+        try:
+            cmd = ["pgrep", "-f", str(path)]
+            out = subprocess.check_output(cmd, text=True).strip()
+            if not out:
+                return
+            pids = [int(p) for p in out.splitlines() if p.strip().isdigit()]
+        except subprocess.CalledProcessError:
+            # pgrep returns non-zero when no processes matched
+            return
+
+        for pid in pids:
+            try:
+                print(f"   [CLEANUP] Terminating PID {pid} for path {path}")
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                continue
+            except PermissionError:
+                continue
+
+        # Give processes a moment to exit
+        time.sleep(timeout)
+
+        # Force kill any remaining
+        for pid in pids:
+            try:
+                # Check if process still exists
+                os.kill(pid, 0)
+            except OSError:
+                continue
+            try:
+                print(f"   [CLEANUP] Killing PID {pid} (SIGKILL)")
+                os.kill(pid, signal.SIGKILL)
+            except Exception:
+                pass
     
     def process_mutants_parallel(self, work_dir: Path, mutants_output_dir: Path,
                                mutants: List[Dict], project_id: str, bug_id: str,
                                relative_source_dirs: List[Path]) -> Tuple[List[Dict], List[str]]:
-        """
-        Process multiple mutants in parallel using ProcessPoolExecutor
-        """
-        successful_mutants = []
-        failed_mutations = []
+        """Process mutants with ISOLATION and REPRODUCIBILITY"""
         
-        # Prepare arguments for all workers
+        # VALIDATE all mutants belong to this project/bug
+        valid_mutants = []
+        for mutant in mutants:
+            if (mutant.get('project_id') == project_id and 
+                mutant.get('bug_id') == bug_id):
+                valid_mutants.append(mutant)
+            else:
+                print(f"WARNING: Skipping mutant from wrong project/bug")
+        
+        successful_mutants = []
+        failed_mutants = []
+        
+        # Create worker args with ISOLATED seeds
         worker_args = []
-        for mutant_info in mutants:
-            mutant_dir = work_dir.parent / f"{project_id}_{bug_id}_{mutant_info['mutant_id']}"
-            if mutant_dir.exists():
-                shutil.rmtree(mutant_dir)
+        for i, mutant_info in enumerate(valid_mutants):
+            # Create UNIQUE directory name with project/bug/mutant ID
+            # Sanitize mutant id to remove characters that are interpreted by the shell (e.g. pipes)
+            raw_mid = str(mutant_info.get('mutant_id', ''))
+            # replace unsafe characters with underscore
+            import re
+            safe_mid = re.sub(r'[^A-Za-z0-9_.-]', '_', raw_mid)
+            # Use a UUID to avoid collisions across fast parallel workers
+            mutant_dir = work_dir.parent / f"temp_mutant_{project_id}_{bug_id}_{safe_mid}_{i}_{uuid.uuid4().hex}"
+
+            # Create deterministic worker seed using MD5 of identifying info
+            # Avoid Python's built-in hash() which is randomized across processes
+            seed_source = f"{project_id}{bug_id}{mutant_info['mutant_id']}{mutant_info.get('generation_seed', 42)}"
+            worker_seed = int(hashlib.md5(seed_source.encode()).hexdigest(), 16) % (2**31)
             
-            args = (work_dir, mutant_dir, mutant_info, project_id, bug_id, relative_source_dirs)
+            args = (work_dir, mutant_dir, mutant_info, project_id, bug_id, 
+                   relative_source_dirs, worker_seed)
             worker_args.append(args)
         
-        print(f"Processing {len(mutants)} mutants with {self.max_workers} workers...")
-        
-        # Execute in parallel
+        # Execute with isolation
         with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
-            # Submit all tasks
-            future_to_mid = {
-                executor.submit(self.process_single_mutant, arg): arg[2]['mutant_id'] 
-                for arg in worker_args
-            }
+            future_to_mutant = {}
+            for args in worker_args:
+                future = executor.submit(self.process_single_mutant, args)
+                future_to_mutant[future] = args[2]['mutant_id']
             
-            # Collect results as they complete
-            for future in as_completed(future_to_mid):
-                mutant_id = future_to_mid[future]
+            for future in as_completed(future_to_mutant):
+                mutant_id = future_to_mutant[future]
                 try:
-                    result = future.result()
-                    if result:
+                    result = future.result(timeout=1200)  # 20 minute timeout
+                    if result and result.get('project_id') == project_id and result.get('bug_id') == bug_id:
                         successful_mutants.append(result)
-                        print(f"✓ Successfully processed mutant {mutant_id}")
                     else:
-                        failed_mutations.append(mutant_id)
-                        print(f"✗ Failed to process mutant {mutant_id}")
+                        failed_mutants.append(mutant_id)
                 except Exception as e:
-                    print(f"✗ Worker exception for mutant {mutant_id}: {e}")
-                    failed_mutations.append(mutant_id)
+                    print(f"Worker failed for mutant {mutant_id}: {e}")
+                    failed_mutants.append(mutant_id)
         
-        print(f"Parallel processing completed: {len(successful_mutants)} successful, {len(failed_mutations)} failed")
-        return successful_mutants, failed_mutations
+        return successful_mutants, failed_mutants

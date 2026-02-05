@@ -32,21 +32,21 @@ class JSONGenerator:
                 'mutant_id': mutant['mutant_id'],
                 'mutator': mutant['mutator'],
                 'class_name': mutant['class_name'],
-                'line_number': mutant['line_number'],
+                ''''line_number': mutant['line_number'],'''
                 'target_file': mutant['target_file'],
-                'num_mutations': mutant.get('num_mutations', 1),
+                ''''num_mutations': mutant.get('num_mutations', 1),'''
                 'mutation_signature': mutant.get('mutation_signature', ''),
                 'coverage': {
-                    'line_coverage_percentage': mutant['coverage_percentage'],
-                    'total_tests_count': mutant['total_tests_count'],
-                    'failed_test_count': mutant['failed_test_count'],
-                    'coverage_success': mutant['coverage_success']
+                    'line_coverage': mutant.get('coverage_percentage', 0),
+                    'branch_coverage': mutant.get('branch_coverage', 0),
+                    '''total_tests_count': mutant.get('total_tests_count', 0),'''
+                    'failed_test_count': mutant.get('failed_test_count', 0),
+                    'coverage_success': mutant.get('coverage_success', False)
                 },
                 'tests': {
-                    'failed_tests': mutant['failed_tests'],
-                    'all_tests': mutant['all_tests']
+                    'failed_tests': mutant.get('failed_tests', [])
                 },
-                'method_coverage': mutant['method_coverage']
+                'method_coverage': mutant.get('method_coverage', {})
             }
             json_data['mutants'].append(mutant_data)
         
