@@ -18,9 +18,7 @@ class CoverageRunner:
     def _load_bug_test_map(self) -> Dict[str, str]:
         """Load bug->test mapping from bug_dataset.csv (first test only)."""
         candidates = [
-            Path("/Users/quibliss/Desktop/desk/second/bug_dataset.csv"),
-            Path("bug_dataset.csv"),
-            Path("data/bug_dataset.csv"),
+            Path("data/bug_dataset.csv")
         ]
         csv_path = next((p for p in candidates if p.exists()), None)
         if not csv_path:
