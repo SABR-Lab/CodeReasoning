@@ -12,7 +12,7 @@ import platform
 from pathlib import Path
 
 # OVERRIDE: Force use of home directory to avoid macOS permissions
-BASE_CHECKOUT_DIR = Path.home() / "defects4j_mutants_testingnewcode"
+BASE_CHECKOUT_DIR = Path("/Users/quibliss/Desktop/desk/second/buggy_json_2_18")
 BASE_CHECKOUT_DIR.mkdir(exist_ok=True)
 
 # Add the parent directory to Python path

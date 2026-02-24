@@ -57,6 +57,7 @@ class MutationParser:
                 return None
             
             return {
+                'whole_log': line,
                 'mutant_id': mutant_id,
                 'mutator': mutator,
                 'original_signature': original_sig,

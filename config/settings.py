@@ -9,7 +9,7 @@ SYSTEM = platform.system().lower()
 if SYSTEM == "windows":
     BASE_CHECKOUT_DIR = Path(os.environ.get('TEMP', 'C:/temp')) / "mutated_codes"
 else:
-    BASE_CHECKOUT_DIR = Path("/tmp/mutated_codes")
+    BASE_CHECKOUT_DIR = Path("/Users/quibliss/Desktop/desk/second/buggy_json_2_18")
 
 # Command configuration
 if SYSTEM == "windows":

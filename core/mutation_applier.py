@@ -101,12 +101,22 @@ class MutationApplier:
                 
                 if selected:
                     first = selected[0]
+                    whole_logs = [m.get('whole_log', '') for m in selected if m.get('whole_log')]
+                    method_names = []
+                    for m in selected:
+                        name = m.get('method_name', '')
+                        if name and name not in method_names:
+                            method_names.append(name)
                     mutant_info.update({
                         'mutator': first['mutator'],
                         'class_name': first['class_name'],
+                        'method_name': " | ".join(method_names) if method_names else first.get('method_name', ''),
+                        'method_names': method_names,
                         'line_number': first['line_number'],
                         'original_code': first['original_code'],
-                        'mutated_code': first['mutated_code']
+                        'mutated_code': first['mutated_code'],
+                        'whole_log': " || ".join(whole_logs) if whole_logs else first.get('whole_log', ''),
+                        'whole_logs': whole_logs
                     })
                 
                 unique_mutants.append(mutant_info)
