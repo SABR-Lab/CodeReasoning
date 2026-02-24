@@ -121,20 +121,35 @@ class CoverageRunner:
                 class_name = cls.get('name')
                 for method in cls.findall('.//method'):
                     method_name = method.get('name')
+                    # Skip constructors and class initializers (not user-defined methods)
+                    if method_name in ("<init>", "<clinit>"):
+                        continue
                     method_signature = method.get('signature', '')
                     full_method_name = f"{class_name}.{method_name}{method_signature}"
                     line_numbers = []
+                    has_nonzero_hits = False
                     for line in method.findall('.//line'):
                         line_number = line.get('number')
                         hit_count = line.get('hits')
                         branch = line.get('branch')
                         if line_number:
+                            parsed_hits = None
+                            if hit_count is not None:
+                                try:
+                                    parsed_hits = int(hit_count)
+                                except ValueError:
+                                    parsed_hits = None
+                            if parsed_hits is not None:
+                                if parsed_hits <= 0:
+                                    continue
+                                has_nonzero_hits = True
                             if branch == 'true':
                                 conditions_covered = line.get('condition-coverage', '')
                                 line_numbers.append(f"{line_number}|{hit_count}|{conditions_covered}")
                             else:
                                 line_numbers.append(f"{line_number}|{hit_count}")
-                    method_data[full_method_name] = line_numbers
+                    if has_nonzero_hits:
+                        method_data[full_method_name] = line_numbers
             return line_rate, branch_rate, method_data
         except Exception as e:
             print(f"Error parsing {xml_file}: {e}")
@@ -185,11 +200,11 @@ class CoverageRunner:
         }
         
         try:
-            # Compile mutant first
-            '''if not self.compile_mutant(mutant_dir):
-                return coverage_result'''
+            # Compile mutant first (required before coverage)
+            if not self.compile_mutant(mutant_dir):
+                return coverage_result
             
-            # Optionally, still run coverage for line/method coverage
+            # Run coverage for line/method coverage
             target_test = self._get_target_test(project_id, bug_id)
             if target_test:
                 print(f"   Running defects4j coverage for test: {target_test}")

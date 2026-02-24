@@ -58,7 +58,7 @@ org.example.Test.test3
     def test_parse_coverage_xml_valid(self, coverage_runner, temp_dir):
         """Test parsing valid coverage XML"""
         coverage_xml_content = """<?xml version="1.0" ?>
-<coverage>
+<coverage line-rate="0.75" branch-rate="0.0">
     <class name="org.example.Test">
         <method name="testMethod" signature="()V">
             <line number="10" hits="1"/>
@@ -74,19 +74,21 @@ org.example.Test.test3
         xml_file = temp_dir / "coverage.xml"
         xml_file.write_text(coverage_xml_content)
         
-        coverage_percentage, method_data = coverage_runner.parse_coverage_xml(xml_file)
+        coverage_percentage, branch_coverage, method_data = coverage_runner.parse_coverage_xml(xml_file)
         
-        # 3 lines covered out of 4 total = 75%
-        assert coverage_percentage == 75.0
+        # Line-rate from XML
+        assert coverage_percentage == 0.75
         assert "org.example.Test.testMethod()V" in method_data
         assert "org.example.Test.anotherMethod(I)Z" in method_data
-        assert method_data["org.example.Test.testMethod()V"] == ['10', '11', '12']
+        assert branch_coverage == 0.0
+        assert method_data["org.example.Test.testMethod()V"] == ['10|1', '11|1']
     
     def test_parse_coverage_xml_file_not_found(self, coverage_runner, temp_dir):
         """Test when coverage XML file doesn't exist"""
-        coverage_percentage, method_data = coverage_runner.parse_coverage_xml(temp_dir / "nonexistent.xml")
+        coverage_percentage, branch_coverage, method_data = coverage_runner.parse_coverage_xml(temp_dir / "nonexistent.xml")
         
         assert coverage_percentage == 0.0
+        assert branch_coverage == 0.0
         assert method_data == {}
     
     def test_parse_coverage_xml_invalid(self, coverage_runner, temp_dir):
@@ -95,7 +97,8 @@ org.example.Test.test3
         xml_file = temp_dir / "coverage.xml"
         xml_file.write_text(invalid_xml)
         
-        coverage_percentage, method_data = coverage_runner.parse_coverage_xml(xml_file)
+        coverage_percentage, branch_coverage, method_data = coverage_runner.parse_coverage_xml(xml_file)
         
         assert coverage_percentage == 0.0
+        assert branch_coverage == 0.0
         assert method_data == {}
