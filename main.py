@@ -12,7 +12,7 @@ import platform
 from pathlib import Path
 
 # OVERRIDE: Force use of home directory to avoid macOS permissions
-BASE_CHECKOUT_DIR = Path.home() / "defects4j_mutants_testingnewcode"
+BASE_CHECKOUT_DIR = Path("/Users/quibliss/Desktop/desk/second/buggy_json_2_18")
 BASE_CHECKOUT_DIR.mkdir(exist_ok=True)
 
 # Add the parent directory to Python path
@@ -55,28 +55,30 @@ class MutantGenerator:
         self._cleanup_bug_directories(project_id, bug_id)
         
         # Create ISOLATED directories
-        work_dir = BASE_CHECKOUT_DIR / f"{project_id}_{bug_id}f"
+        fixed_dir = BASE_CHECKOUT_DIR / f"{project_id}_{bug_id}f"
+        buggy_dir = BASE_CHECKOUT_DIR / f"{project_id}_{bug_id}b"
         mutants_output_dir = BASE_CHECKOUT_DIR / f"{project_id}_{bug_id}_mutants"
         
         print(f"\n{'='*60}")
         print(f"ISOLATED PROCESS: {project_id}-{bug_id}")
         print(f"Seed: {self.random_seed}")
-        print(f"Directory: {work_dir}")
+        print(f"Fixed dir: {fixed_dir}")
+        print(f"Buggy dir: {buggy_dir}")
         print(f"Output: {mutants_output_dir}")
         print(f"{'='*60}")
         
         try:
-            # Setup project
-            if not self._setup_project(project_id, bug_id, work_dir):
+            # Setup fixed and buggy projects
+            if not self._setup_project(project_id, bug_id, fixed_dir, buggy_dir):
                 return False
             
-            # Get source directories
-            source_dirs = self.project_manager.get_source_directories(work_dir)
+            # Get source directories from buggy version
+            source_dirs = self.project_manager.get_source_directories(buggy_dir)
             if not source_dirs:
                 print("✗ No source directories found")
                 return False
             
-            relative_source_dirs = self.file_ops.get_relative_paths(source_dirs, work_dir)
+            relative_source_dirs = self.file_ops.get_relative_paths(source_dirs, buggy_dir)
             
             # Get mutations with PROJECT-SPECIFIC seed
             mutation_applier = MutationApplier(
@@ -85,7 +87,7 @@ class MutantGenerator:
                 bug_id=bug_id
             )
             
-            mutations = self._select_mutations(work_dir, mutation_applier, 
+            mutations = self._select_mutations(fixed_dir, mutation_applier, 
                                              mutant_percentage, max_mutations)
             if not mutations:
                 return False
@@ -93,7 +95,7 @@ class MutantGenerator:
             # Process with isolation
             worker_pool = WorkerPool(max_workers=self.max_workers)
             successful_mutants, failed_mutants = worker_pool.process_mutants_parallel(
-                work_dir, mutants_output_dir, mutations, 
+                buggy_dir, mutants_output_dir, mutations, 
                 project_id, bug_id, relative_source_dirs
             )
             
@@ -133,6 +135,7 @@ class MutantGenerator:
         
         patterns = [
             f"{project_id}_{bug_id}f",
+            f"{project_id}_{bug_id}b",
             f"{project_id}_{bug_id}_mutants",
             f"temp_mutant_{project_id}_{bug_id}_*"
         ]
@@ -147,19 +150,25 @@ class MutantGenerator:
                 except:
                     pass
     
-    def _setup_project(self, project_id: str, bug_id: str, work_dir: Path) -> bool:
-        """Setup project: checkout, compile, run mutation testing"""
+    def _setup_project(self, project_id: str, bug_id: str,
+                      fixed_dir: Path, buggy_dir: Path) -> bool:
+        """Setup fixed+buggy projects: checkout fixed, compile, mutation; checkout buggy."""
         # Clean existing directories
-        self.file_ops.clean_directory(work_dir)
-        
-        # Checkout and compile
-        if not self.project_manager.checkout_project(project_id, bug_id, work_dir):
+        self.file_ops.clean_directory(fixed_dir)
+        self.file_ops.clean_directory(buggy_dir)
+
+        # Checkout fixed and compile
+        if not self.project_manager.checkout_project_version(project_id, bug_id, "f", fixed_dir, compile_project=True):
             return False
-        
-        # Run mutation testing
-        if not self.project_manager.run_mutation_testing(work_dir):
+
+        # Run mutation testing on fixed to generate mutants.log
+        if not self.project_manager.run_mutation_testing(fixed_dir):
             return False
-        
+
+        # Checkout buggy version (no compile needed here)
+        if not self.project_manager.checkout_project_version(project_id, bug_id, "b", buggy_dir, compile_project=False):
+            return False
+
         return True
     
     def _select_mutations(self, work_dir: Path, mutation_applier: MutationApplier,

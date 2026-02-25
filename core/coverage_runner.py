@@ -1,4 +1,5 @@
 import subprocess
+import csv
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, Tuple, List
@@ -12,6 +13,40 @@ class CoverageRunner:
     
     def __init__(self):
         self.defects4j_cmd = DEFECTS4J_EXECUTABLE
+        self._bug_test_map = self._load_bug_test_map()
+
+    def _load_bug_test_map(self) -> Dict[str, str]:
+        """Load bug->test mapping from bug_dataset.csv (first test only)."""
+        candidates = [
+            Path("data/bug_dataset.csv")
+        ]
+        csv_path = next((p for p in candidates if p.exists()), None)
+        if not csv_path:
+            print("[WARN] bug_dataset.csv not found; running coverage on full test suite.")
+            return {}
+
+        bug_test_map: Dict[str, str] = {}
+        try:
+            with open(csv_path, 'r', encoding='utf-8') as infile:
+                reader = csv.DictReader(infile)
+                for row in reader:
+                    bug_key = row.get('bug', '').strip()
+                    failing_tests = row.get('failingTests', '').strip()
+                    if not bug_key or not failing_tests:
+                        continue
+                    # take first test only (comma-separated list)
+                    first_test = failing_tests.split(',')[0].strip()
+                    if first_test:
+                        bug_test_map[bug_key] = first_test
+            print(f"[INFO] Loaded {len(bug_test_map)} bug test mappings from {csv_path}")
+        except Exception as e:
+            print(f"[WARN] Failed to read {csv_path}: {e}")
+        return bug_test_map
+
+    def _get_target_test(self, project_id: str, bug_id: str) -> str:
+        """Return the target test for coverage, or empty string if not found."""
+        bug_key = f"{project_id}-{bug_id}"
+        return self._bug_test_map.get(bug_key, "")
 
     def run_defects4j_test(self, mutant_dir: Path) -> dict:
         """Run defects4j test and parse failed test cases and their names."""
@@ -86,20 +121,35 @@ class CoverageRunner:
                 class_name = cls.get('name')
                 for method in cls.findall('.//method'):
                     method_name = method.get('name')
+                    # Skip constructors and class initializers (not user-defined methods)
+                    if method_name in ("<init>", "<clinit>"):
+                        continue
                     method_signature = method.get('signature', '')
                     full_method_name = f"{class_name}.{method_name}{method_signature}"
                     line_numbers = []
+                    has_nonzero_hits = False
                     for line in method.findall('.//line'):
                         line_number = line.get('number')
                         hit_count = line.get('hits')
                         branch = line.get('branch')
                         if line_number:
+                            parsed_hits = None
+                            if hit_count is not None:
+                                try:
+                                    parsed_hits = int(hit_count)
+                                except ValueError:
+                                    parsed_hits = None
+                            if parsed_hits is not None:
+                                if parsed_hits <= 0:
+                                    continue
+                                has_nonzero_hits = True
                             if branch == 'true':
                                 conditions_covered = line.get('condition-coverage', '')
                                 line_numbers.append(f"{line_number}|{hit_count}|{conditions_covered}")
                             else:
                                 line_numbers.append(f"{line_number}|{hit_count}")
-                    method_data[full_method_name] = line_numbers
+                    if has_nonzero_hits:
+                        method_data[full_method_name] = line_numbers
             return line_rate, branch_rate, method_data
         except Exception as e:
             print(f"Error parsing {xml_file}: {e}")
@@ -142,25 +192,30 @@ class CoverageRunner:
         """Run comprehensive coverage analysis on mutant"""
         coverage_result = {
             'coverage_success': False,
-            'failed_tests': [],
-            'all_tests': [],
-            'total_tests': 0,
-            'failed_count': 0,
             'coverage_output': '',
             'coverage_percentage': 0,
             'method_coverage': {},
             'branch_coverage': 0,
+            'test_run': '',
         }
         
         try:
-            # Compile mutant first
-            '''if not self.compile_mutant(mutant_dir):
-                return coverage_result'''
+            # Compile mutant first (required before coverage)
+            if not self.compile_mutant(mutant_dir):
+                return coverage_result
             
-            # Optionally, still run coverage for line/method coverage
-            print("   Running defects4j coverage...")
+            # Run coverage for line/method coverage
+            target_test = self._get_target_test(project_id, bug_id)
+            if target_test:
+                print(f"   Running defects4j coverage for test: {target_test}")
+                coverage_cmd = [self.defects4j_cmd, "coverage", "-t", target_test]
+                coverage_result['test_run'] = target_test
+            else:
+                print("   Running defects4j coverage...")
+                coverage_cmd = [self.defects4j_cmd, "coverage", "-r"]
+
             coverage_process = subprocess.run(
-                [self.defects4j_cmd, "coverage", "-r"],
+                coverage_cmd,
                 capture_output=True, text=True, cwd=mutant_dir,
                 timeout=COVERAGE_TIMEOUT
             )
@@ -175,21 +230,10 @@ class CoverageRunner:
                 coverage_result['branch_coverage'] = branch_coverage
                 coverage_result['method_coverage'] = method_data
                 print(f"   Line-rate: {coverage_result['coverage_percentage']:.4f}, Branch-coverage: {coverage_result['branch_coverage']:.4f}")
-            # Run defects4j test and parse results
-            print("   Running defects4j test...")
-            test_result = self.run_defects4j_test(mutant_dir)
-            coverage_result['failed_tests'] = test_result['failed_tests']
-            coverage_result['failed_count'] = test_result['failed_count']
-            coverage_result['all_tests'] = test_result['all_tests']
-            coverage_result['total_tests'] = len(test_result['all_tests']) if test_result['all_tests'] else 0
-            coverage_result['test_output'] = test_result['test_output']
-
-           
-
-            print(f"   Test completed - {coverage_result['failed_count']} tests failed")
+            # defects4j test is intentionally skipped (coverage only)
 
         except subprocess.TimeoutExpired:
-            print("   Coverage or test command timed out")
+            print("   Coverage command timed out")
             coverage_result['coverage_output'] = "TIMEOUT"
             try:
                 self._kill_processes_for_path(mutant_dir)
@@ -197,7 +241,7 @@ class CoverageRunner:
             except Exception as e:
                 coverage_result['coverage_output'] += f"; cleanup error: {e}"
         except Exception as e:
-            print(f"   Error running coverage/test: {e}")
+            print(f"   Error running coverage: {e}")
             coverage_result['coverage_output'] = f"ERROR: {str(e)}"
 
         return coverage_result

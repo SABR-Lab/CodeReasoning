@@ -31,20 +31,14 @@ class JSONGenerator:
             mutant_data = {
                 'mutant_id': mutant['mutant_id'],
                 'mutator': mutant['mutator'],
-                'class_name': mutant['class_name'],
-                ''''line_number': mutant['line_number'],'''
+                'method_mutated': mutant.get('method_names', []),
                 'target_file': mutant['target_file'],
-                ''''num_mutations': mutant.get('num_mutations', 1),'''
-                'mutation_signature': mutant.get('mutation_signature', ''),
+                'test_ran': mutant.get('test_run', ''),
+                'whole_logs': mutant.get('whole_logs', []),
                 'coverage': {
                     'line_coverage': mutant.get('coverage_percentage', 0),
                     'branch_coverage': mutant.get('branch_coverage', 0),
-                    '''total_tests_count': mutant.get('total_tests_count', 0),'''
-                    'failed_test_count': mutant.get('failed_test_count', 0),
                     'coverage_success': mutant.get('coverage_success', False)
-                },
-                'tests': {
-                    'failed_tests': mutant.get('failed_tests', [])
                 },
                 'method_coverage': mutant.get('method_coverage', {})
             }

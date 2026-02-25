@@ -69,18 +69,23 @@ class ProjectManager:
             return False
     
     def checkout_project(self, project_id: str, bug_id: str, work_dir: Path) -> bool:
-        """Checkout and compile a specific project version - PLATFORM INDEPENDENT"""
+        """Checkout and compile a buggy project version (default behavior)."""
+        return self.checkout_project_version(project_id, bug_id, "b", work_dir, compile_project=True)
+
+    def checkout_project_version(self, project_id: str, bug_id: str, version: str,
+                                 work_dir: Path, compile_project: bool = True) -> bool:
+        """Checkout a specific project version (b/f) and optionally compile."""
         if work_dir.exists():
             self._clean_directory(work_dir)
         
         defects4j_cmd = self._get_defects4j_command()
         
         checkout_cmd = [
-            defects4j_cmd, "checkout", "-p", project_id, 
-            "-v", f"{bug_id}f", "-w", str(work_dir)
+            defects4j_cmd, "checkout", "-p", project_id,
+            "-v", f"{bug_id}{version}", "-w", str(work_dir)
         ]
         
-        print(f"Checking out {project_id}-{bug_id}f using: {' '.join(checkout_cmd)}")
+        print(f"Checking out {project_id}-{bug_id}{version} using: {' '.join(checkout_cmd)}")
         
         try:
             result = subprocess.run(
@@ -91,8 +96,8 @@ class ProjectManager:
                 cwd=self.base_dir, 
                 timeout=300
             )
-            print(f"✓ Checked out {project_id}-{bug_id}f")
-            return self.compile_project(work_dir)
+            print(f"✓ Checked out {project_id}-{bug_id}{version}")
+            return self.compile_project(work_dir) if compile_project else True
         except subprocess.CalledProcessError as e:
             print(f"✗ Failed to checkout project: {e}")
             if e.stderr:
