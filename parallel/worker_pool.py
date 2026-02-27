@@ -72,6 +72,17 @@ class WorkerPool:
                 if not target_file:
                     print(f"   [PID {pid}] File not found: {class_name}")
                     continue
+                relative_line = mutation_applier.get_relative_line_number(
+                    target_file,
+                    mutation.get('method_name', ''),
+                    line_number
+                )
+                relative_line_value = relative_line if relative_line is not None else line_number
+                mutation['relative_line_number'] = relative_line_value
+                mutation['mutation'] = (
+                    f"{class_name}@{mutation.get('method_name', '')}:{relative_line_value}:"
+                    f"{original_code} |==> {mutated_code}"
+                )
                 if target_file not in mutations_by_file:
                     mutations_by_file[target_file] = []
                 mutations_by_file[target_file].append(mutation)
@@ -108,6 +119,9 @@ class WorkerPool:
                 'target_file': str(list(mutations_by_file.keys())[0].relative_to(mutant_dir)),
                 'whole_log': mutant_info.get('whole_log', ''),
                 'whole_logs': mutant_info.get('whole_logs', []),
+                'mutation': " || ".join(
+                    [m.get('mutation', '') for m in mutant_info.get('mutations', []) if m.get('mutation')]
+                ),
                 'coverage_success': coverage_result['coverage_success'],
                 'coverage_percentage': coverage_result['coverage_percentage'],
                 'branch_coverage': coverage_result['branch_coverage'],
