@@ -3,6 +3,7 @@
 import hashlib
 import shutil
 import random
+import re
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
@@ -144,6 +145,58 @@ class MutationApplier:
             parts.append(part)
         
         return "||".join(parts)
+
+    @staticmethod
+    def _count_params(param_str: str) -> int:
+        """Count parameters in a method signature string."""
+        params = [p.strip() for p in param_str.split(',') if p.strip()]
+        return len(params)
+
+    @staticmethod
+    def find_method_start_line(source_file: Path, method_name: str) -> Optional[int]:
+        """Find the line number where a method declaration starts."""
+        if not method_name:
+            return None
+
+        base_name = method_name.split('(')[0].strip()
+        param_str = ""
+        if '(' in method_name and ')' in method_name:
+            param_str = method_name[method_name.find('(') + 1:method_name.rfind(')')]
+        expected_param_count = MutationApplier._count_params(param_str) if param_str else None
+
+        try:
+            with open(source_file, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.readlines()
+        except Exception:
+            return None
+
+        pattern = re.compile(rf"\b{re.escape(base_name)}\s*\(")
+
+        for idx, line in enumerate(lines, start=1):
+            line_no_comments = line.split("//", 1)[0]
+            if "class " in line_no_comments:
+                continue
+            if not pattern.search(line_no_comments):
+                continue
+
+            if ')' in line_no_comments:
+                params_in_line = line_no_comments[line_no_comments.find('(') + 1:line_no_comments.find(')')]
+                param_count = MutationApplier._count_params(params_in_line)
+                if expected_param_count is not None and param_count != expected_param_count:
+                    continue
+
+            return idx
+
+        return None
+
+    @staticmethod
+    def get_relative_line_number(source_file: Path, method_name: str, absolute_line: int) -> Optional[int]:
+        """Convert an absolute line number to a method-relative line number."""
+        start_line = MutationApplier.find_method_start_line(source_file, method_name)
+        if start_line is None:
+            return None
+        relative_line = absolute_line - start_line
+        return relative_line if relative_line >= 0 else None
     
     @staticmethod
     def find_java_file_by_class(class_name: str, source_dirs: List[Path]) -> Optional[Path]:
