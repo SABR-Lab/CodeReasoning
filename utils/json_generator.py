@@ -34,6 +34,7 @@ class JSONGenerator:
                 'method_mutated': mutant.get('method_names', []),
                 'target_file': mutant['target_file'],
                 'test_ran': mutant.get('test_run', ''),
+                'mutation': mutant.get('mutation', ''),
                 'whole_logs': mutant.get('whole_logs', []),
                 'coverage': {
                     'line_coverage': mutant.get('coverage_percentage', 0),
