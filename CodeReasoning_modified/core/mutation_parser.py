@@ -96,6 +96,7 @@ class MutationParser:
     def load_kill_csv_ids(kill_csv: Path) -> List[str]:
         """Load mutant IDs marked as covered (anything except UNCOV) from kill.csv."""
         if not kill_csv.exists():
+            print(f"kill.csv not found at {kill_csv}; no mutations will be kept.")
             return []
         ids: List[str] = []
         try:
@@ -118,7 +119,8 @@ class MutationParser:
         """Filter mutations to those marked as covered (not UNCOV) in kill.csv."""
         kill_ids = set(MutationParser.load_kill_csv_ids(kill_csv))
         if not kill_ids:
-            return mutations
+            print("No mutations retained because kill.csv is missing or empty.")
+            return []
         filtered = [m for m in mutations if str(m.get('mutant_id')) in kill_ids]
         print(f"Filtered mutations by kill.csv: {len(filtered)} of {len(mutations)}")
         return filtered

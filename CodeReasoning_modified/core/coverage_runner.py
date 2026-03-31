@@ -162,6 +162,52 @@ class CoverageRunner:
                     continue
             return idx
         return None
+
+    @staticmethod
+    def _format_branch_conditions(line_element: ET.Element) -> Tuple[str, str]:
+        """Format branch condition coverage as (covered/total) and numbered condition list."""
+        condition_coverage = line_element.get('condition-coverage', '')
+        covered_total = None
+        total_total = None
+        ratio = ""
+        match = re.search(r"\((\d+)\s*/\s*(\d+)\)", condition_coverage)
+        if match:
+            covered_total = int(match.group(1))
+            total_total = int(match.group(2))
+            ratio = f"({covered_total}/{total_total})"
+
+        conditions = line_element.findall('./conditions/condition')
+        if not conditions:
+            return ratio, "[]"
+
+        per_condition_total = None
+        remainder = 0
+        if total_total is not None and len(conditions) > 0:
+            per_condition_total = total_total // len(conditions)
+            remainder = total_total % len(conditions)
+
+        formatted_conditions = []
+        for idx, condition in enumerate(conditions):
+            number = condition.get('number') or str(idx)
+            coverage_text = condition.get('coverage', '')
+            cond_match = re.search(r"\((\d+)\s*/\s*(\d+)\)", coverage_text)
+            if cond_match:
+                cond_covered = cond_match.group(1)
+                cond_total = cond_match.group(2)
+                formatted_conditions.append(f"{number}:{cond_covered}/{cond_total}")
+                continue
+
+            if per_condition_total is not None and per_condition_total > 0:
+                percent_match = re.search(r"(\d+)", coverage_text)
+                percent = int(percent_match.group(1)) if percent_match else 0
+                extra = 1 if idx < remainder else 0
+                total_for_condition = per_condition_total + extra
+                covered_for_condition = round((percent / 100) * total_for_condition)
+                formatted_conditions.append(f"{number}:{covered_for_condition}/{total_for_condition}")
+            else:
+                formatted_conditions.append(f"{number}:0/0")
+
+        return ratio, f"({', '.join(formatted_conditions)})"
     
     def parse_coverage_xml(self, xml_file: Path, base_dir: Optional[Path] = None) -> Tuple[float, float, Dict[str, List[str]]]:
         """Parse coverage.xml and extract line-rate, branch-rate, and method coverage data"""
@@ -179,11 +225,15 @@ class CoverageRunner:
                 java_file = self._find_java_file_by_class(class_name, base_dir) if base_dir else None
                 for method in cls.findall('.//method'):
                     method_name = method.get('name')
-                    # Skip constructors and class initializers (not user-defined methods)
-                    if method_name in ("<init>", "<clinit>"):
-                        continue
                     method_signature = method.get('signature', '')
-                    full_method_name = f"{class_name}.{method_name}{method_signature}"
+                    if method_name == "<init>":
+                        simple_class_name = class_name.split('.')[-1] if class_name else ""
+                        translated_method_name = simple_class_name
+                    elif method_name == "<clinit>":
+                        translated_method_name = "static initializer"
+                    else:
+                        translated_method_name = method_name
+                    full_method_name = f"{class_name}.{translated_method_name}{method_signature}"
                     line_numbers = []
                     has_nonzero_hits = False
                     start_line = None
@@ -215,8 +265,10 @@ class CoverageRunner:
                                 if candidate >= 0:
                                     relative_line_number = candidate
                             if branch == 'true':
-                                conditions_covered = line.get('condition-coverage', '')
-                                line_numbers.append(f"{relative_line_number}|{hit_count}|{conditions_covered}")
+                                ratio, conditions_detail = self._format_branch_conditions(line)
+                                line_numbers.append(
+                                    f"{relative_line_number}|{hit_count}|{ratio}|{conditions_detail}"
+                                )
                             else:
                                 line_numbers.append(f"{relative_line_number}|{hit_count}")
                     if has_nonzero_hits:

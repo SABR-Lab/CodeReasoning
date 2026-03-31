@@ -127,3 +127,16 @@ class TestMutationParser:
 
         filtered_ids = [m["mutant_id"] for m in filtered]
         assert set(filtered_ids) == {"1", "2"}
+
+    def test_filter_mutations_by_kill_csv_missing(self, mutation_parser, temp_dir):
+        """Missing kill.csv should yield no mutations (mandatory filtering)."""
+        log_content = """1:LVR:FALSE:TRUE:org.example.Test@test:10:1:false |==> true
+2:LVR:FALSE:TRUE:org.example.Test@test:11:1:false |==> true
+"""
+        log_file = temp_dir / "mutants.log"
+        log_file.write_text(log_content)
+
+        mutations = mutation_parser.parse_all_mutations(log_file)
+        filtered = mutation_parser.filter_mutations_by_kill_csv(mutations, temp_dir / "kill.csv")
+
+        assert filtered == []
