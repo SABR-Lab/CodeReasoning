@@ -11,9 +11,9 @@ import random
 import platform
 from pathlib import Path
 
-# OVERRIDE: Force use of home directory to avoid macOS permissions
-BASE_CHECKOUT_DIR = Path("/home/cc/mutated_codes")
-BASE_CHECKOUT_DIR.mkdir(exist_ok=True)
+# Use platform-aware base directory from settings
+from config.settings import BASE_CHECKOUT_DIR
+BASE_CHECKOUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Add the parent directory to Python path
 current_dir = Path(__file__).parent

@@ -38,8 +38,15 @@ class JSONGenerator:
                 'whole_logs': mutant.get('whole_logs', []),
                 'coverage': {
                     'line_coverage': mutant.get('coverage_percentage', 0),
+                    'line_coverage_percentage': mutant.get('coverage_percentage', 0),
                     'branch_coverage': mutant.get('branch_coverage', 0),
                     'coverage_success': mutant.get('coverage_success', False)
+                },
+                'tests': {
+                    'failed_tests': mutant.get('failed_tests', []),
+                    'all_tests': mutant.get('all_tests', []),
+                    'failed_test_count': mutant.get('failed_test_count', 0),
+                    'total_tests_count': mutant.get('total_tests_count', 0)
                 },
                 'method_coverage': mutant.get('method_coverage', {})
             }

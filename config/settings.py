@@ -9,7 +9,9 @@ SYSTEM = platform.system().lower()
 if SYSTEM == "windows":
     BASE_CHECKOUT_DIR = Path(os.environ.get('TEMP', 'C:/temp')) / "mutated_codes"
 else:
-    BASE_CHECKOUT_DIR = Path("/home/cc/mutated_codes")
+    # Prefer an explicit env override, else fall back to user home
+    env_base = os.environ.get("MUTATED_CODES_DIR")
+    BASE_CHECKOUT_DIR = Path(env_base) if env_base else (Path.home() / "mutated_codes")
 
 # Command configuration
 if SYSTEM == "windows":

@@ -88,10 +88,10 @@ org.example.Test.test3
         
         # Line-rate from XML
         assert coverage_percentage == 0.75
-    assert "org.example.Test.Test()V" in method_data
-    assert "org.example.Test.static initializer()V" in method_data
-    assert "org.example.Test.testMethod()V" in method_data
-    assert "org.example.Test.anotherMethod(I)Z" in method_data
+        assert "org.example.Test.Test()V" in method_data
+        assert "org.example.Test.static initializer()V" in method_data
+        assert "org.example.Test.testMethod()V" in method_data
+        assert "org.example.Test.anotherMethod(I)Z" in method_data
         assert branch_coverage == 0.0
         assert method_data["org.example.Test.testMethod()V"] == [
             '10|1|(1/2)|(0:1/2)',

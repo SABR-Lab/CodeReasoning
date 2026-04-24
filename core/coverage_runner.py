@@ -215,8 +215,18 @@ class CoverageRunner:
         line_rate = 0.0
         branch_rate = 0.0
         try:
-            tree = ET.parse(xml_file)
-            root = tree.getroot()
+            try:
+                tree = ET.parse(xml_file)
+                root = tree.getroot()
+            except ET.ParseError:
+                # Some coverage.xml files contain unescaped <init>/<clinit> in attributes
+                raw_xml = xml_file.read_text(encoding='utf-8', errors='ignore')
+                sanitized_xml = (
+                    raw_xml
+                    .replace('name="<init>"', 'name="&lt;init&gt;"')
+                    .replace('name="<clinit>"', 'name="&lt;clinit&gt;"')
+                )
+                root = ET.fromstring(sanitized_xml)
             # Get line-rate and branch-rate from root attributes
             line_rate = float(root.attrib.get('line-rate', '0'))
             branch_rate = float(root.attrib.get('branch-rate', '0'))
