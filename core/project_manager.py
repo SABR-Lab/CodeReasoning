@@ -4,8 +4,9 @@ import platform
 import shutil
 import subprocess
 import os
+import csv
 from pathlib import Path
-from typing import List
+from typing import List, Dict
 
 from config.settings import DEFECTS4J_EXECUTABLE, BASE_CHECKOUT_DIR
 
@@ -17,6 +18,7 @@ class ProjectManager:
         self.base_dir = base_dir
         self.base_dir.mkdir(exist_ok=True)
         self.system = platform.system().lower()
+        self._bug_test_map = self._load_bug_test_map()
         
     def _get_defects4j_command(self) -> str:
         """Get platform-appropriate Defects4J command"""
@@ -135,11 +137,46 @@ class ProjectManager:
             print(f"✗ Failed to compile project: {e}")
             return False
     
-    def run_mutation_testing(self, work_dir: Path) -> bool:
+    def _load_bug_test_map(self) -> Dict[str, str]:
+        """Load bug->test mapping from bug_dataset.csv (first test only)."""
+        candidates = [
+            Path("data/bug_dataset.csv")
+        ]
+        csv_path = next((p for p in candidates if p.exists()), None)
+        if not csv_path:
+            print("[WARN] bug_dataset.csv not found; mutation will run without -t.")
+            return {}
+
+        bug_test_map: Dict[str, str] = {}
+        try:
+            with open(csv_path, 'r', encoding='utf-8') as infile:
+                reader = csv.DictReader(infile)
+                for row in reader:
+                    bug_key = row.get('bug', '').strip()
+                    failing_tests = row.get('failingTests', '').strip()
+                    if not bug_key or not failing_tests:
+                        continue
+                    first_test = failing_tests.split(',')[0].strip()
+                    if first_test:
+                        bug_test_map[bug_key] = first_test
+            print(f"[INFO] Loaded {len(bug_test_map)} bug test mappings from {csv_path}")
+        except Exception as e:
+            print(f"[WARN] Failed to read {csv_path}: {e}")
+        return bug_test_map
+
+    def get_target_test(self, project_id: str, bug_id: str) -> str:
+        """Return the target failing test for a project/bug if available."""
+        bug_key = f"{project_id}-{bug_id}"
+        return self._bug_test_map.get(bug_key, "")
+
+    def run_mutation_testing(self, work_dir: Path, test_name: str = "") -> bool:
         """Run mutation testing to generate mutants.log"""
         try:
+            mutation_cmd = [DEFECTS4J_EXECUTABLE, "mutation"]
+            if test_name:
+                mutation_cmd.extend(["-t", test_name])
             result = subprocess.run(
-                [DEFECTS4J_EXECUTABLE, "mutation"],
+                mutation_cmd,
                 check=True, capture_output=True, text=True, cwd=work_dir,
                 timeout=720
             )

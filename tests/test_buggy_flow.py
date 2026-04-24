@@ -21,9 +21,12 @@ class _StubProjectManager:
         ))
         return True
 
-    def run_mutation_testing(self, work_dir: Path) -> bool:
-        self.calls.append(("mutation", work_dir))
+    def run_mutation_testing(self, work_dir: Path, test_name: str = "") -> bool:
+        self.calls.append(("mutation", work_dir, test_name))
         return True
+
+    def get_target_test(self, project_id: str, bug_id: str) -> str:
+        return "org.example.Test::testSomething"
 
 
 def test_setup_project_fixed_then_buggy(tmp_path):
@@ -46,7 +49,7 @@ def test_setup_project_fixed_then_buggy(tmp_path):
         fixed_dir,
         True,
     )
-    assert stub_pm.calls[1] == ("mutation", fixed_dir)
+    assert stub_pm.calls[1] == ("mutation", fixed_dir, "org.example.Test::testSomething")
     assert stub_pm.calls[2] == (
         "checkout",
         "Math",

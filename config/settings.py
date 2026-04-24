@@ -9,7 +9,8 @@ SYSTEM = platform.system().lower()
 if SYSTEM == "windows":
     BASE_CHECKOUT_DIR = Path(os.environ.get('TEMP', 'C:/temp')) / "mutated_codes"
 else:
-    BASE_CHECKOUT_DIR = Path("/tmp/mutated_codes")
+    BASE_CHECKOUT_DIR = Path("/home/cc/mutated_codes")
+
 # Command configuration
 if SYSTEM == "windows":
     DEFECTS4J_EXECUTABLE = "defects4j.bat"

@@ -12,7 +12,7 @@ import platform
 from pathlib import Path
 
 # OVERRIDE: Force use of home directory to avoid macOS permissions
-BASE_CHECKOUT_DIR = Path("/tmp/mutated_codes")
+BASE_CHECKOUT_DIR = Path("/home/cc/mutated_codes")
 BASE_CHECKOUT_DIR.mkdir(exist_ok=True)
 
 # Add the parent directory to Python path
@@ -161,8 +161,9 @@ class MutantGenerator:
         if not self.project_manager.checkout_project_version(project_id, bug_id, "f", fixed_dir, compile_project=True):
             return False
 
-        # Run mutation testing on fixed to generate mutants.log
-        if not self.project_manager.run_mutation_testing(fixed_dir):
+        # Run mutation testing on fixed to generate mutants.log and kill.csv
+        target_test = self.project_manager.get_target_test(project_id, bug_id)
+        if not self.project_manager.run_mutation_testing(fixed_dir, target_test):
             return False
 
         # Checkout buggy version (no compile needed here)
@@ -182,6 +183,13 @@ class MutantGenerator:
         all_mutations = self.mutation_parser.parse_all_mutations(log_file)
         if not all_mutations:
             print("✗ No mutations parsed")
+            return []
+
+        # Filter using kill.csv (FAIL/KILLED only)
+        kill_csv = work_dir / "kill.csv"
+        all_mutations = self.mutation_parser.filter_mutations_by_kill_csv(all_mutations, kill_csv)
+        if not all_mutations:
+            print("✗ No mutations after kill.csv filtering")
             return []
         
         # Calculate number of mutants based on percentage

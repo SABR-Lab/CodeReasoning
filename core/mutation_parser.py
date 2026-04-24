@@ -78,22 +78,12 @@ class MutationParser:
         print(f"Parsing mutations from {log_file.name}...")
         
         all_mutations = []
-        prev_line, prev_mutator = -1, -1
         
         try:
             with open(log_file, 'r') as f:
                 for line in f:
                     mutation_info = self.parse_mutant_line(line)
                     if mutation_info:
-                        # Skip duplicates (same line, same mutator)
-                        if (mutation_info['line_number'] == prev_line and 
-                            mutation_info['mutator'] == prev_mutator):
-                            prev_line = mutation_info['line_number']
-                            prev_mutator = mutation_info['mutator']
-                            continue
-                        
-                        prev_line = mutation_info['line_number']
-                        prev_mutator = mutation_info['mutator']
                         all_mutations.append(mutation_info)
                         
         except Exception as e:
@@ -101,3 +91,36 @@ class MutationParser:
         
         print(f"Parsed {len(all_mutations)} total mutations")
         return all_mutations
+
+    @staticmethod
+    def load_kill_csv_ids(kill_csv: Path) -> List[str]:
+        """Load mutant IDs marked as covered (anything except UNCOV) from kill.csv."""
+        if not kill_csv.exists():
+            print(f"kill.csv not found at {kill_csv}; no mutations will be kept.")
+            return []
+        ids: List[str] = []
+        try:
+            with open(kill_csv, 'r', encoding='utf-8') as f:
+                for idx, line in enumerate(f):
+                    if idx == 0 and "MutantNo" in line:
+                        continue
+                    parts = [p.strip() for p in line.strip().split(',')]
+                    if len(parts) < 2:
+                        continue
+                    mutant_id, status = parts[0], parts[1].upper()
+                    if status != "UNCOV":
+                        ids.append(mutant_id)
+        except Exception as e:
+            print(f"Error reading kill.csv: {e}")
+        return ids
+
+    @staticmethod
+    def filter_mutations_by_kill_csv(mutations: List[Dict], kill_csv: Path) -> List[Dict]:
+        """Filter mutations to those marked as covered (not UNCOV) in kill.csv."""
+        kill_ids = set(MutationParser.load_kill_csv_ids(kill_csv))
+        if not kill_ids:
+            print("No mutations retained because kill.csv is missing or empty.")
+            return []
+        filtered = [m for m in mutations if str(m.get('mutant_id')) in kill_ids]
+        print(f"Filtered mutations by kill.csv: {len(filtered)} of {len(mutations)}")
+        return filtered

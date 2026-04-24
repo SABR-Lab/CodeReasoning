@@ -2,7 +2,7 @@ import subprocess
 import csv
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Optional
 import re
 
 from config.settings import DEFECTS4J_EXECUTABLE, COVERAGE_TIMEOUT
@@ -105,8 +105,111 @@ class CoverageRunner:
     def compile_mutant(self, mutant_dir: Path) -> bool:
         """Compile the mutant"""
         return bool(self.run_command([self.defects4j_cmd, "compile"], mutant_dir, "Compile mutant"))
+
+    @staticmethod
+    def _count_params_from_jvm_signature(signature: str) -> int:
+        """Count parameters in a JVM method signature like (I[Ljava/lang/String;)Z."""
+        if not signature or '(' not in signature or ')' not in signature:
+            return 0
+        params = signature[signature.find('(') + 1:signature.find(')')]
+        count = 0
+        i = 0
+        while i < len(params):
+            char = params[i]
+            if char == 'L':
+                end = params.find(';', i)
+                if end == -1:
+                    break
+                count += 1
+                i = end + 1
+            elif char == '[':
+                i += 1
+            else:
+                count += 1
+                i += 1
+        return count
+
+    @staticmethod
+    def _find_java_file_by_class(class_name: str, base_dir: Path) -> Optional[Path]:
+        """Find Java source file for a fully-qualified class name under base_dir."""
+        if not class_name:
+            return None
+        rel_path = Path(*class_name.split('.')).with_suffix('.java')
+        direct = base_dir / rel_path
+        if direct.exists():
+            return direct
+        matches = list(base_dir.rglob(str(rel_path)))
+        return matches[0] if matches else None
+
+    @staticmethod
+    def _find_method_start_line(source_file: Path, method_name: str, param_count: int) -> Optional[int]:
+        """Find the start line of a method declaration in a Java source file."""
+        if not method_name:
+            return None
+        try:
+            lines = source_file.read_text(encoding='utf-8', errors='ignore').splitlines()
+        except Exception:
+            return None
+        pattern = re.compile(rf"\b{re.escape(method_name)}\s*\(")
+        for idx, line in enumerate(lines, start=1):
+            line_no_comments = line.split('//', 1)[0]
+            if not pattern.search(line_no_comments):
+                continue
+            if ')' in line_no_comments:
+                params_in_line = line_no_comments[line_no_comments.find('(') + 1:line_no_comments.find(')')]
+                found_count = len([p for p in params_in_line.split(',') if p.strip()])
+                if found_count != param_count:
+                    continue
+            return idx
+        return None
+
+    @staticmethod
+    def _format_branch_conditions(line_element: ET.Element) -> Tuple[str, str]:
+        """Format branch condition coverage as (covered/total) and numbered condition list."""
+        condition_coverage = line_element.get('condition-coverage', '')
+        covered_total = None
+        total_total = None
+        ratio = ""
+        match = re.search(r"\((\d+)\s*/\s*(\d+)\)", condition_coverage)
+        if match:
+            covered_total = int(match.group(1))
+            total_total = int(match.group(2))
+            ratio = f"({covered_total}/{total_total})"
+
+        conditions = line_element.findall('./conditions/condition')
+        if not conditions:
+            return ratio, "[]"
+
+        per_condition_total = None
+        remainder = 0
+        if total_total is not None and len(conditions) > 0:
+            per_condition_total = total_total // len(conditions)
+            remainder = total_total % len(conditions)
+
+        formatted_conditions = []
+        for idx, condition in enumerate(conditions):
+            number = condition.get('number') or str(idx)
+            coverage_text = condition.get('coverage', '')
+            cond_match = re.search(r"\((\d+)\s*/\s*(\d+)\)", coverage_text)
+            if cond_match:
+                cond_covered = cond_match.group(1)
+                cond_total = cond_match.group(2)
+                formatted_conditions.append(f"{number}:{cond_covered}/{cond_total}")
+                continue
+
+            if per_condition_total is not None and per_condition_total > 0:
+                percent_match = re.search(r"(\d+)", coverage_text)
+                percent = int(percent_match.group(1)) if percent_match else 0
+                extra = 1 if idx < remainder else 0
+                total_for_condition = per_condition_total + extra
+                covered_for_condition = round((percent / 100) * total_for_condition)
+                formatted_conditions.append(f"{number}:{covered_for_condition}/{total_for_condition}")
+            else:
+                formatted_conditions.append(f"{number}:0/0")
+
+        return ratio, f"({', '.join(formatted_conditions)})"
     
-    def parse_coverage_xml(self, xml_file: Path) -> Tuple[float, float, Dict[str, List[str]]]:
+    def parse_coverage_xml(self, xml_file: Path, base_dir: Optional[Path] = None) -> Tuple[float, float, Dict[str, List[str]]]:
         """Parse coverage.xml and extract line-rate, branch-rate, and method coverage data"""
         method_data = {}
         line_rate = 0.0
@@ -119,15 +222,24 @@ class CoverageRunner:
             branch_rate = float(root.attrib.get('branch-rate', '0'))
             for cls in root.findall('.//class'):
                 class_name = cls.get('name')
+                java_file = self._find_java_file_by_class(class_name, base_dir) if base_dir else None
                 for method in cls.findall('.//method'):
                     method_name = method.get('name')
-                    # Skip constructors and class initializers (not user-defined methods)
-                    if method_name in ("<init>", "<clinit>"):
-                        continue
                     method_signature = method.get('signature', '')
-                    full_method_name = f"{class_name}.{method_name}{method_signature}"
+                    if method_name == "<init>":
+                        simple_class_name = class_name.split('.')[-1] if class_name else ""
+                        translated_method_name = simple_class_name
+                    elif method_name == "<clinit>":
+                        translated_method_name = "static initializer"
+                    else:
+                        translated_method_name = method_name
+                    full_method_name = f"{class_name}.{translated_method_name}{method_signature}"
                     line_numbers = []
                     has_nonzero_hits = False
+                    start_line = None
+                    if java_file and method_name:
+                        param_count = self._count_params_from_jvm_signature(method_signature)
+                        start_line = self._find_method_start_line(java_file, method_name, param_count)
                     for line in method.findall('.//line'):
                         line_number = line.get('number')
                         hit_count = line.get('hits')
@@ -143,11 +255,22 @@ class CoverageRunner:
                                 if parsed_hits <= 0:
                                     continue
                                 has_nonzero_hits = True
+                            try:
+                                parsed_line_number = int(line_number)
+                            except ValueError:
+                                parsed_line_number = None
+                            relative_line_number = parsed_line_number
+                            if start_line is not None and parsed_line_number is not None:
+                                candidate = parsed_line_number - start_line
+                                if candidate >= 0:
+                                    relative_line_number = candidate
                             if branch == 'true':
-                                conditions_covered = line.get('condition-coverage', '')
-                                line_numbers.append(f"{line_number}|{hit_count}|{conditions_covered}")
+                                ratio, conditions_detail = self._format_branch_conditions(line)
+                                line_numbers.append(
+                                    f"{relative_line_number}|{hit_count}|{ratio}|{conditions_detail}"
+                                )
                             else:
-                                line_numbers.append(f"{line_number}|{hit_count}")
+                                line_numbers.append(f"{relative_line_number}|{hit_count}")
                     if has_nonzero_hits:
                         method_data[full_method_name] = line_numbers
             return line_rate, branch_rate, method_data
@@ -225,7 +348,7 @@ class CoverageRunner:
             # Parse coverage XML
             coverage_xml_file = mutant_dir / "coverage.xml"
             if coverage_xml_file.exists():
-                line_rate, branch_coverage, method_data = self.parse_coverage_xml(coverage_xml_file)
+                line_rate, branch_coverage, method_data = self.parse_coverage_xml(coverage_xml_file, mutant_dir)
                 coverage_result['coverage_percentage'] = line_rate
                 coverage_result['branch_coverage'] = branch_coverage
                 coverage_result['method_coverage'] = method_data

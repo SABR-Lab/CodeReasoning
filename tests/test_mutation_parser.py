@@ -90,9 +90,8 @@ class TestMutationParser:
         assert len(mutations) >= 1  # At least some mutations should be parsed
     
     def test_parse_all_mutations_duplicate_filtering(self, mutation_parser, temp_dir):
-        """Test that duplicate mutations are filtered out - YOUR LOGIC"""
-        # Create test data that matches YOUR duplicate filtering logic
-        # YOUR code filters when line_number AND mutator are the same
+        """Test that duplicate mutations are preserved."""
+        # Create test data with duplicates
         log_content = """1:LVR:FALSE:TRUE:org.apache.commons.math3.distribution.HypergeometricDistribution:47:2230:false |==> true
 1:LVR:FALSE:TRUE:org.apache.commons.math3.distribution.HypergeometricDistribution:47:2230:false |==> true
 30:LVR:0:POS:org.apache.commons.math3.distribution.HypergeometricDistribution@cumulativeProbability(int):119:5471:0.0 |==> 1.0
@@ -105,6 +104,39 @@ class TestMutationParser:
         
         mutations = mutation_parser.parse_all_mutations(log_file)
         
-        # Should filter out exact duplicates (same ID, same everything)
-        # Your code might parse all or filter some
-        assert len(mutations) >= 1
+        assert len(mutations) == 5
+
+    def test_filter_mutations_by_kill_csv(self, mutation_parser, temp_dir):
+        """Filter mutations by kill.csv statuses (exclude UNCOV)."""
+        log_content = """1:LVR:FALSE:TRUE:org.example.Test@test:10:1:false |==> true
+2:LVR:FALSE:TRUE:org.example.Test@test:11:1:false |==> true
+3:LVR:FALSE:TRUE:org.example.Test@test:12:1:false |==> true
+"""
+        log_file = temp_dir / "mutants.log"
+        log_file.write_text(log_content)
+
+        kill_csv = temp_dir / "kill.csv"
+        kill_csv.write_text("""MutantNo,[FAIL | TIME | EXC | LIVE | UNCOV]
+1,FAIL
+2,LIVE
+3,UNCOV
+""")
+
+        mutations = mutation_parser.parse_all_mutations(log_file)
+        filtered = mutation_parser.filter_mutations_by_kill_csv(mutations, kill_csv)
+
+        filtered_ids = [m["mutant_id"] for m in filtered]
+        assert set(filtered_ids) == {"1", "2"}
+
+    def test_filter_mutations_by_kill_csv_missing(self, mutation_parser, temp_dir):
+        """Missing kill.csv should yield no mutations (mandatory filtering)."""
+        log_content = """1:LVR:FALSE:TRUE:org.example.Test@test:10:1:false |==> true
+2:LVR:FALSE:TRUE:org.example.Test@test:11:1:false |==> true
+"""
+        log_file = temp_dir / "mutants.log"
+        log_file.write_text(log_content)
+
+        mutations = mutation_parser.parse_all_mutations(log_file)
+        filtered = mutation_parser.filter_mutations_by_kill_csv(mutations, temp_dir / "kill.csv")
+
+        assert filtered == []

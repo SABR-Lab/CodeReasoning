@@ -60,8 +60,18 @@ org.example.Test.test3
         coverage_xml_content = """<?xml version="1.0" ?>
 <coverage line-rate="0.75" branch-rate="0.0">
     <class name="org.example.Test">
+        <method name="<init>" signature="()V">
+            <line number="5" hits="1"/>
+        </method>
+        <method name="<clinit>" signature="()V">
+            <line number="6" hits="1"/>
+        </method>
         <method name="testMethod" signature="()V">
-            <line number="10" hits="1"/>
+            <line number="10" hits="1" branch="true" condition-coverage="50% (1/2)">
+                <conditions>
+                    <condition number="0" type="jump" coverage="50%"/>
+                </conditions>
+            </line>
             <line number="11" hits="1"/>
             <line number="12" hits="0"/>
         </method>
@@ -78,10 +88,15 @@ org.example.Test.test3
         
         # Line-rate from XML
         assert coverage_percentage == 0.75
-        assert "org.example.Test.testMethod()V" in method_data
-        assert "org.example.Test.anotherMethod(I)Z" in method_data
+    assert "org.example.Test.Test()V" in method_data
+    assert "org.example.Test.static initializer()V" in method_data
+    assert "org.example.Test.testMethod()V" in method_data
+    assert "org.example.Test.anotherMethod(I)Z" in method_data
         assert branch_coverage == 0.0
-        assert method_data["org.example.Test.testMethod()V"] == ['10|1', '11|1']
+        assert method_data["org.example.Test.testMethod()V"] == [
+            '10|1|(1/2)|(0:1/2)',
+            '11|1'
+        ]
     
     def test_parse_coverage_xml_file_not_found(self, coverage_runner, temp_dir):
         """Test when coverage XML file doesn't exist"""
